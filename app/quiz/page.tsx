@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import ProgressBar from "@/app/components/ProgressBar";
@@ -52,7 +52,7 @@ export default function QuizPage() {
   const currentQuestion = QUESTIONS[currentIndex];
   const selectedAnswer = answers[currentQuestion.id];
 
-  const progressCurrent = useMemo(() => currentIndex + 1, [currentIndex]);
+  const progressCurrent = currentIndex + 1;
 
   const handleSelect = (answer: string) => {
     setAnswers((prev) => ({

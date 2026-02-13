@@ -44,20 +44,16 @@ export default function QuestionCard({
               key={option}
               type="button"
               onClick={() => onSelect(option)}
-              className={`group w-full rounded-xl border px-4 py-3 text-left text-sm transition duration-200 motion-safe:animate-[fade-up_420ms_ease-out_both] sm:text-base ${
-                isSelected
-                  ? "border-cyan-500 bg-cyan-50 text-slate-900 shadow-[0_8px_24px_-18px_rgba(8,145,178,0.6)]"
-                  : "border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 hover:border-cyan-300"
+              className={`quiz-option group w-full rounded-xl px-4 py-3 text-left text-sm transition duration-200 motion-safe:animate-[fade-up_420ms_ease-out_both] sm:text-base ${
+                isSelected ? "quiz-option-selected" : "hover:-translate-y-0.5"
               }`}
               style={{ animationDelay: `${optionIndex * 70}ms` }}
             >
               <span className="flex items-center justify-between gap-3">
                 <span>{option}</span>
                 <span
-                  className={`inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs transition ${
-                    isSelected
-                      ? "border-cyan-500 bg-cyan-500 text-white"
-                      : "border-slate-300 bg-white text-transparent group-hover:border-cyan-300"
+                  className={`quiz-option-indicator inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs transition ${
+                    isSelected ? "quiz-option-indicator-selected" : ""
                   }`}
                 >
                   *
