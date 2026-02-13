@@ -11,10 +11,8 @@ export default function ModeCard({ icon, title, subtitle, selected, onSelect }: 
     <button
       type="button"
       onClick={onSelect}
-      className={`w-full rounded-2xl border p-5 text-left shadow-sm transition sm:p-6 ${
-        selected
-          ? "border-indigo-500 bg-indigo-50"
-          : "border-white/70 bg-white/80 hover:border-indigo-300"
+      className={`choice-card w-full rounded-2xl p-5 text-left shadow-sm transition sm:p-6 ${
+        selected ? "choice-card-selected" : ""
       }`}
     >
       <div className="flex items-start gap-3">

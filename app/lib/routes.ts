@@ -23,11 +23,21 @@ export const appRoutes: AppRoute[] = [
   {
     href: "/scenario-select",
     title: "Scenario Select",
+    description: "Legacy route that forwards to scenarios.",
+  },
+  {
+    href: "/scenarios",
+    title: "Scenarios",
     description: "Pick a scenario to launch the conversation.",
   },
   {
     href: "/chat",
     title: "Chat",
     description: "Main conversational experience.",
+  },
+  {
+    href: "/summary",
+    title: "Summary",
+    description: "Review mode, scenario, and completed exchanges.",
   },
 ];

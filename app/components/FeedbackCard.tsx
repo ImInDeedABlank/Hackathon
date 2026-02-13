@@ -11,20 +11,20 @@ type FeedbackCardProps = {
 
 export default function FeedbackCard({ feedback }: FeedbackCardProps) {
   return (
-    <section className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 sm:p-5">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-700">Feedback</h3>
-      <div className="mt-3 space-y-2 text-sm text-slate-700">
+    <section className="feedback-card rounded-2xl p-4 sm:p-5">
+      <h3 className="feedback-card-title text-sm font-semibold uppercase tracking-wide">Feedback</h3>
+      <div className="feedback-card-body mt-3 space-y-2 text-sm">
         <p>
-          <span className="font-semibold text-slate-900">Corrections:</span> {feedback.corrections}
+          <span className="feedback-card-label font-semibold">Corrections:</span> {feedback.corrections}
         </p>
         <p>
-          <span className="font-semibold text-slate-900">Grammar note:</span> {feedback.grammarNote}
+          <span className="feedback-card-label font-semibold">Grammar note:</span> {feedback.grammarNote}
         </p>
         <p>
-          <span className="font-semibold text-slate-900">Natural phrasing:</span> {feedback.naturalPhrasing}
+          <span className="feedback-card-label font-semibold">Natural phrasing:</span> {feedback.naturalPhrasing}
         </p>
         <p>
-          <span className="font-semibold text-slate-900">Score:</span> {feedback.score}/10
+          <span className="feedback-card-label font-semibold">Score:</span> {feedback.score}/10
         </p>
       </div>
     </section>

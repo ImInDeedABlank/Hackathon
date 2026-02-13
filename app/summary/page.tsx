@@ -31,14 +31,14 @@ export default function SummaryPage() {
           <button
             type="button"
             onClick={() => router.push("/scenarios")}
-            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+            className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
           >
             Try Another Scenario
           </button>
           <button
             type="button"
-            onClick={() => router.push("/mode")}
-            className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"
+            onClick={() => router.push("/mode-select")}
+            className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold"
           >
             Change Mode
           </button>

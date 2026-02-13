@@ -88,7 +88,7 @@ export default function WritingPage() {
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="btn-glow mt-5 inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            className="btn-glow mt-5 inline-flex w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {isSubmitting ? "Evaluating..." : "Submit Writing"}
           </button>

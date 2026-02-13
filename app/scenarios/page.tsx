@@ -1,32 +1,57 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import ScenarioCard from "@/app/components/ScenarioCard";
-import { STORAGE_KEYS, writeString } from "@/lib/placementStorage";
+import {
+  STORAGE_KEYS,
+  readPlacementResult,
+  readString,
+  writeNumber,
+  writeString,
+} from "@/lib/placementStorage";
 
-const SCENARIOS = ["Airport", "Ordering Food", "Job Interview", "Hotel Check-in", "Doctor Visit"] as const;
+const DEFAULT_SCENARIOS = [
+  "Airport",
+  "Ordering Food",
+  "Job Interview",
+  "Hotel Check-in",
+  "Doctor Visit",
+] as const;
 
 export default function ScenariosPage() {
   const router = useRouter();
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
+  const [selectedMode] = useState(() => readString(STORAGE_KEYS.selectedMode, "Text Chat"));
+  const [recommendedScenarios] = useState(() => readPlacementResult()?.recommended_scenarios ?? []);
+
+  const scenarioOptions = useMemo(() => {
+    const merged = [...recommendedScenarios, ...DEFAULT_SCENARIOS];
+    return Array.from(new Set(merged)).slice(0, 6);
+  }, [recommendedScenarios]);
 
   const handleSelect = (scenario: string) => {
     setSelectedScenario(scenario);
     writeString(STORAGE_KEYS.selectedScenario, scenario);
+    writeNumber(STORAGE_KEYS.sessionExchanges, 0);
     router.push("/chat");
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 via-indigo-50 to-purple-50 px-4 py-8 sm:px-6 sm:py-12">
-      <div className="mx-auto w-full max-w-4xl rounded-2xl border border-white/70 bg-white/80 p-6 shadow-sm backdrop-blur sm:p-8">
-        <p className="text-xs font-medium uppercase tracking-wide text-indigo-700">Session Setup</p>
+    <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+      <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
+      <div className="theme-top-fade pointer-events-none absolute left-1/2 top-0 h-56 w-[40rem] -translate-x-1/2" />
+      <div className="theme-panel relative mx-auto w-full max-w-4xl rounded-2xl p-6 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Session Setup</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Select a Scenario</h1>
-        <p className="mt-2 text-sm text-slate-600">Choose one real-life context to start the conversation.</p>
+        <p className="mt-2 text-sm text-slate-600">
+          Mode: <span className="font-semibold text-slate-900">{selectedMode}</span>
+        </p>
+        <p className="mt-1 text-sm text-slate-600">Choose one real-life context to start the conversation.</p>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {SCENARIOS.map((scenario) => (
+          {scenarioOptions.map((scenario) => (
             <ScenarioCard
               key={scenario}
               name={scenario}

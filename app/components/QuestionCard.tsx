@@ -77,7 +77,7 @@ export default function QuestionCard({
           type="button"
           onClick={onNext}
           disabled={!selectedAnswer}
-          className="btn-glow rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn-glow rounded-lg px-4 py-2 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLast ? "Continue" : "Next"}
         </button>

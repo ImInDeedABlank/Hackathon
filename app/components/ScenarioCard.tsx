@@ -9,10 +9,8 @@ export default function ScenarioCard({ name, selected, onSelect }: ScenarioCardP
     <button
       type="button"
       onClick={onSelect}
-      className={`w-full rounded-2xl border p-5 text-left shadow-sm transition ${
-        selected
-          ? "border-indigo-500 bg-indigo-50"
-          : "border-white/70 bg-white/80 hover:border-indigo-300"
+      className={`choice-card w-full rounded-2xl p-5 text-left shadow-sm transition ${
+        selected ? "choice-card-selected" : ""
       }`}
     >
       <p className="text-base font-semibold text-slate-900">{name}</p>

@@ -37,7 +37,7 @@ export default function ResultsPage() {
   };
 
   const handleContinue = () => {
-    router.push("/mode");
+    router.push("/mode-select");
   };
 
   if (!result) {
@@ -49,7 +49,7 @@ export default function ResultsPage() {
           <button
             type="button"
             onClick={() => router.push("/quiz")}
-            className="btn-glow mt-5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"
+            className="btn-glow mt-5 rounded-xl px-4 py-2.5 text-sm font-semibold"
           >
             Go to Quiz
           </button>
@@ -146,7 +146,7 @@ export default function ResultsPage() {
           <button
             type="button"
             onClick={handleContinue}
-            className="btn-glow rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-slate-800"
+            className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
           >
             Continue
           </button>

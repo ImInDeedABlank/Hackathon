@@ -1,0 +1,31 @@
+/* Centralized contrast-safe component colors across themes. */
+
+.feedback-card {
+  border: 1px solid var(--line-border);
+  background: var(--surface-soft);
+}
+
+.feedback-card-title {
+  color: var(--kicker);
+}
+
+.feedback-card-body {
+  color: var(--muted);
+}
+
+.feedback-card-label {
+  color: var(--foreground);
+}
+
+/* Utility-level fallback fixes for light-indigo cards in dark mode. */
+:root[data-theme="dark"] [class*="bg-indigo-50"] {
+  background-color: var(--surface-soft) !important;
+}
+
+:root[data-theme="dark"] [class*="border-indigo-100"] {
+  border-color: var(--line-border) !important;
+}
+
+:root[data-theme="dark"] [class*="text-indigo-700"] {
+  color: #88e5ff !important;
+}
