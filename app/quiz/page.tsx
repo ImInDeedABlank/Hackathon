@@ -95,10 +95,12 @@ export default function QuizPage() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 via-indigo-50 to-purple-50 px-4 py-8 sm:px-6 sm:py-12">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
-        <header className="space-y-3 rounded-2xl border border-white/70 bg-white/75 p-5 shadow-sm backdrop-blur sm:p-6">
-          <p className="text-xs font-medium uppercase tracking-wide text-indigo-700">Placement Step 1 of 3</p>
+    <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+      <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
+      <div className="theme-top-fade pointer-events-none absolute left-1/2 top-0 h-56 w-[40rem] -translate-x-1/2" />
+      <div className="relative mx-auto flex w-full max-w-2xl flex-col gap-5">
+        <header className="theme-panel space-y-3 rounded-2xl p-5 backdrop-blur motion-safe:animate-[fade-up_600ms_ease-out_both] sm:p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Placement Step 1 of 3</p>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Quick MCQ Check</h1>
           <p className="text-sm text-slate-600">
             Answer 4 quick questions. We use this together with your writing sample.
@@ -107,6 +109,7 @@ export default function QuizPage() {
         </header>
 
         <QuestionCard
+          key={currentQuestion.id}
           index={currentIndex}
           total={QUESTIONS.length}
           question={currentQuestion}

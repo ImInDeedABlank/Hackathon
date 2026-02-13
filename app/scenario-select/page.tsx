@@ -6,7 +6,7 @@ export default function ScenarioSelectPage() {
       title="Scenario Select"
       description="Select the scenario context used to initialize chat."
     >
-      <p className="text-sm text-zinc-700 dark:text-zinc-200">
+      <p className="text-sm text-slate-700">
         Scenario selection page scaffold is ready.
       </p>
     </PageContainer>

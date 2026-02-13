@@ -6,7 +6,7 @@ export default function ChatPage() {
       title="Chat"
       description="Conversation UI, transcript, and assistant controls belong here."
     >
-      <p className="text-sm text-zinc-700 dark:text-zinc-200">
+      <p className="text-sm text-slate-700">
         Chat page scaffold is ready.
       </p>
     </PageContainer>

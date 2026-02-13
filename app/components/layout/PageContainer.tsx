@@ -12,12 +12,13 @@ export default function PageContainer({
   children,
 }: PageContainerProps) {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-8 px-6 py-12">
-      <header className="space-y-2">
+    <main className="theme-page relative mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-8 overflow-hidden px-6 py-12">
+      <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
+      <header className="relative space-y-2 motion-safe:animate-[fade-up_520ms_ease-out_both]">
         <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">{description}</p>
+        <p className="text-sm text-slate-600">{description}</p>
       </header>
-      <section className="rounded-xl border border-zinc-200 p-6 dark:border-zinc-800">
+      <section className="theme-panel relative rounded-xl p-6 backdrop-blur motion-safe:animate-[card-enter_520ms_ease-out_100ms_both]">
         {children}
       </section>
     </main>

@@ -6,7 +6,7 @@ export default function ModeSelectPage() {
       title="Mode Select"
       description="Choose a conversation mode before starting a scenario."
     >
-      <p className="text-sm text-zinc-700 dark:text-zinc-200">
+      <p className="text-sm text-slate-700">
         Mode selection page scaffold is ready.
       </p>
     </PageContainer>

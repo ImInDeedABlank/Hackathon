@@ -13,10 +13,10 @@ export default function RouteCards({ routes }: RouteCardsProps) {
         <Link
           key={route.href}
           href={route.href}
-          className="rounded-lg border border-zinc-200 p-4 transition hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-500"
+          className="rounded-xl border border-slate-200 bg-white/90 p-4 transition duration-300 hover:-translate-y-0.5 hover:border-cyan-400 hover:shadow-sm"
         >
-          <p className="text-base font-medium">{route.title}</p>
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+          <p className="text-base font-medium text-slate-900">{route.title}</p>
+          <p className="text-sm text-slate-600">
             {route.description}
           </p>
         </Link>
