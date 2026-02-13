@@ -1,5 +1,3 @@
-import { PLACEMENT_SYSTEM_PROMPT } from "@/lib/prompts";
-
 export type PlacementResult = {
   level: "Beginner" | "Intermediate" | "Advanced";
   cefr_hint: "A1" | "A2" | "B1" | "B2" | "C1";
@@ -22,8 +20,7 @@ export type PlacementInput = {
   writingSample: string;
 };
 
-const API_URL = "https://api.openai.com/v1/chat/completions";
-const MODEL = "gpt-4o-mini";
+const PLACEMENT_API_PATH = "/api/placement";
 
 function asTuple3(values: unknown, fallback: [string, string, string]): [string, string, string] {
   if (!Array.isArray(values)) {
@@ -47,7 +44,7 @@ function asTuple2(values: unknown, fallback: [string, string]): [string, string]
   return [safe[0], safe[1]];
 }
 
-function normalizePlacementResult(raw: unknown): PlacementResult {
+export function normalizePlacementResult(raw: unknown): PlacementResult {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const feedback = source.feedback as Record<string, unknown> | undefined;
 
@@ -99,7 +96,7 @@ function normalizePlacementResult(raw: unknown): PlacementResult {
   };
 }
 
-function buildMockResult(input: PlacementInput): PlacementResult {
+export function buildMockResult(input: PlacementInput): PlacementResult {
   const total = input.vocabScore + input.grammarScore;
   if (total >= 4) {
     return {
@@ -209,43 +206,21 @@ export function buildPlacementUserMessage(input: PlacementInput): string {
 }
 
 export async function getPlacementResult(input: PlacementInput): Promise<PlacementResult> {
-  const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
-    return buildMockResult(input);
-  }
-
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(PLACEMENT_API_PATH, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: PLACEMENT_SYSTEM_PROMPT },
-          { role: "user", content: buildPlacementUserMessage(input) },
-        ],
-      }),
+      body: JSON.stringify(input),
     });
 
     if (!response.ok) {
       return buildMockResult(input);
     }
 
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) {
-      return buildMockResult(input);
-    }
-
-    const parsed = JSON.parse(content) as unknown;
-    return normalizePlacementResult(parsed);
+    const data = (await response.json()) as unknown;
+    return normalizePlacementResult(data);
   } catch {
     return buildMockResult(input);
   }
