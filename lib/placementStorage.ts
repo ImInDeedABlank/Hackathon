@@ -6,6 +6,9 @@ export const STORAGE_KEYS = {
   grammarScore: "linguasim.grammarScore",
   writingSample: "linguasim.writingSample",
   placementResult: "linguasim.placementResult",
+  selectedMode: "linguasim.selectedMode",
+  selectedScenario: "linguasim.selectedScenario",
+  sessionExchanges: "linguasim.sessionExchanges",
 } as const;
 
 export function readNumber(key: string, fallback = 0): number {
