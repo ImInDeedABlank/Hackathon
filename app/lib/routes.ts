@@ -1,0 +1,33 @@
+export type AppRoute = {
+  href: string;
+  title: string;
+  description: string;
+};
+
+export const appRoutes: AppRoute[] = [
+  {
+    href: "/",
+    title: "Landing",
+    description: "Entry page with app overview and quick navigation.",
+  },
+  {
+    href: "/quiz",
+    title: "Quiz",
+    description: "Quiz flow and progress checkpoint.",
+  },
+  {
+    href: "/mode-select",
+    title: "Mode Select",
+    description: "Choose your learning or interaction mode.",
+  },
+  {
+    href: "/scenario-select",
+    title: "Scenario Select",
+    description: "Pick a scenario to launch the conversation.",
+  },
+  {
+    href: "/chat",
+    title: "Chat",
+    description: "Main conversational experience.",
+  },
+];
