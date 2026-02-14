@@ -29,7 +29,7 @@ export default function LandingHero() {
         </p>
         <div className="mt-8 flex flex-wrap gap-3 motion-safe:animate-[fade-up_750ms_ease-out_340ms_both]">
           <Link
-            href="/quiz"
+            href="/placement"
             className="btn-glow inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-semibold transition hover:-translate-y-0.5"
           >
             {t("start_test")}

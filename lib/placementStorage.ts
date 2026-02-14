@@ -1,4 +1,10 @@
 import type { PlacementResult } from "@/lib/placement";
+import type { PlacementSummary } from "@/lib/adaptivePlacement";
+
+export type PlacementMeta = {
+  focus_areas: [string, string, string];
+  summary: PlacementSummary;
+};
 
 export const STORAGE_KEYS = {
   uiLanguage: "uiLanguage",
@@ -7,6 +13,7 @@ export const STORAGE_KEYS = {
   grammarScore: "linguasim.grammarScore",
   writingSample: "linguasim.writingSample",
   placementResult: "linguasim.placementResult",
+  placementMeta: "linguasim.placementMeta",
   selectedMode: "linguasim.selectedMode",
   selectedScenario: "linguasim.selectedScenario",
   sessionExchanges: "linguasim.sessionExchanges",
@@ -59,6 +66,28 @@ export function readPlacementResult(): PlacementResult | null {
   }
   try {
     return JSON.parse(raw) as PlacementResult;
+  } catch {
+    return null;
+  }
+}
+
+export function writePlacementMeta(meta: PlacementMeta): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(STORAGE_KEYS.placementMeta, JSON.stringify(meta));
+}
+
+export function readPlacementMeta(): PlacementMeta | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const raw = window.localStorage.getItem(STORAGE_KEYS.placementMeta);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as PlacementMeta;
   } catch {
     return null;
   }

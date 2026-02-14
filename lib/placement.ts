@@ -1,227 +1,75 @@
-export type PlacementResult = {
-  level: "Beginner" | "Intermediate" | "Advanced";
-  cefr_hint: "A1" | "A2" | "B1" | "B2" | "C1";
-  confidence: number;
-  strengths: [string, string, string];
-  weaknesses: [string, string, string];
-  feedback: {
-    corrected_version: string;
-    key_mistakes: [string, string, string];
-    natural_alternatives: [string, string];
-  };
-  recommended_mode: "Speak" | "Text";
-  recommended_scenarios: [string, string];
-};
+import { clamp, type PlacementMetrics } from "@/lib/adaptivePlacement";
 
-export type PlacementInput = {
-  targetLanguage: string;
-  vocabScore: number;
-  grammarScore: number;
-  writingSample: string;
-};
+export type PlacementResult = PlacementMetrics;
 
-const PLACEMENT_API_PATH = "/api/placement";
-
-function asTuple3(values: unknown, fallback: [string, string, string]): [string, string, string] {
-  if (!Array.isArray(values)) {
+function tuple3(value: unknown, fallback: [string, string, string]): [string, string, string] {
+  if (!Array.isArray(value)) {
     return fallback;
   }
-  const safe = values.filter((item): item is string => typeof item === "string").slice(0, 3);
-  if (safe.length < 3) {
-    return fallback;
-  }
-  return [safe[0], safe[1], safe[2]];
+  const safe = value.filter((item): item is string => typeof item === "string").slice(0, 3);
+  return safe.length === 3 ? [safe[0], safe[1], safe[2]] : fallback;
 }
 
-function asTuple2(values: unknown, fallback: [string, string]): [string, string] {
-  if (!Array.isArray(values)) {
+function tuple2(value: unknown, fallback: [string, string]): [string, string] {
+  if (!Array.isArray(value)) {
     return fallback;
   }
-  const safe = values.filter((item): item is string => typeof item === "string").slice(0, 2);
-  if (safe.length < 2) {
-    return fallback;
-  }
-  return [safe[0], safe[1]];
+  const safe = value.filter((item): item is string => typeof item === "string").slice(0, 2);
+  return safe.length === 2 ? [safe[0], safe[1]] : fallback;
 }
 
 export function normalizePlacementResult(raw: unknown): PlacementResult {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const feedback = source.feedback as Record<string, unknown> | undefined;
+  const feedback = source.feedback && typeof source.feedback === "object" ? (source.feedback as Record<string, unknown>) : {};
 
-  const level = source.level;
-  const cefr = source.cefr_hint;
-  const mode = source.recommended_mode;
-  const confidence = source.confidence;
+  const level = source.level === "Intermediate" || source.level === "Advanced" ? source.level : "Beginner";
+  const cefr =
+    source.cefr_hint === "A1" ||
+    source.cefr_hint === "A2" ||
+    source.cefr_hint === "B1" ||
+    source.cefr_hint === "B2" ||
+    source.cefr_hint === "C1"
+      ? source.cefr_hint
+      : "A1";
+  const mode = source.recommended_mode === "Speak" ? "Speak" : "Text";
 
   return {
-    level:
-      level === "Beginner" || level === "Intermediate" || level === "Advanced"
-        ? level
-        : "Beginner",
-    cefr_hint: cefr === "A1" || cefr === "A2" || cefr === "B1" || cefr === "B2" || cefr === "C1" ? cefr : "A1",
+    level,
+    cefr_hint: cefr,
     confidence:
-      typeof confidence === "number" && Number.isFinite(confidence)
-        ? Math.max(0, Math.min(100, Math.round(confidence)))
-        : 65,
-    strengths: asTuple3(source.strengths, [
-      "Shows basic intent clearly",
-      "Can produce short connected ideas",
-      "Attempts target-language structure",
+      typeof source.confidence === "number" && Number.isFinite(source.confidence)
+        ? clamp(Math.round(source.confidence), 0, 100)
+        : 60,
+    strengths: tuple3(source.strengths, [
+      "Shows clear intent in simple prompts.",
+      "Can respond to practical scenarios.",
+      "Adapts to mixed question types.",
     ]),
-    weaknesses: asTuple3(source.weaknesses, [
-      "Inconsistent grammar agreement",
-      "Limited vocabulary precision",
-      "Sentence flow needs smoothing",
+    weaknesses: tuple3(source.weaknesses, [
+      "Needs stronger grammar consistency.",
+      "Needs wider active vocabulary.",
+      "Needs smoother sentence flow.",
     ]),
     feedback: {
       corrected_version:
-        feedback && typeof feedback.corrected_version === "string"
+        typeof feedback.corrected_version === "string"
           ? feedback.corrected_version
-          : "Thanks for your writing sample. Keep practicing full sentences with clear connectors.",
-      key_mistakes: asTuple3(feedback?.key_mistakes, [
+          : "Keep your responses short and clear, then add one supporting detail.",
+      key_mistakes: tuple3(feedback.key_mistakes, [
         "Verb tense consistency",
-        "Article or preposition usage",
-        "Word order in longer clauses",
+        "Article/preposition choices",
+        "Sentence order in longer responses",
       ]),
-      natural_alternatives: asTuple2(feedback?.natural_alternatives, [
-        "Use shorter clauses before combining ideas.",
-        "Replace literal translations with common phrases.",
+      natural_alternatives: tuple2(feedback.natural_alternatives, [
+        "Use one short sentence first, then add one detail.",
+        "Reuse high-frequency phrases before complex structures.",
       ]),
+      grammar_note:
+        typeof feedback.grammar_note === "string"
+          ? feedback.grammar_note
+          : "Keep one tense per sentence and check subject-verb agreement.",
     },
-    recommended_mode: mode === "Speak" || mode === "Text" ? mode : "Text",
-    recommended_scenarios: asTuple2(source.recommended_scenarios, [
-      "Ordering at a cafe",
-      "Introducing yourself at work",
-    ]),
+    recommended_mode: mode,
+    recommended_scenarios: tuple2(source.recommended_scenarios, ["Ordering Food", "Hotel Check-in"]),
   };
-}
-
-export function buildMockResult(input: PlacementInput): PlacementResult {
-  const total = input.vocabScore + input.grammarScore;
-  if (total >= 4) {
-    return {
-      level: "Advanced",
-      cefr_hint: "B2",
-      confidence: 84,
-      strengths: [
-        "Strong control of core grammar",
-        "Good lexical precision for common contexts",
-        "Clear and coherent sentence structure",
-      ],
-      weaknesses: [
-        "Occasional collocation choices feel literal",
-        "Could vary connectors for smoother flow",
-        "Needs more idiomatic phrasing in nuance",
-      ],
-      feedback: {
-        corrected_version: input.writingSample.trim() || "Your writing sample looks strong overall.",
-        key_mistakes: [
-          "Natural collocations in longer phrases",
-          "Register consistency across sentences",
-          "Fine-grained article/preposition choices",
-        ],
-        natural_alternatives: [
-          "Try replacing direct translations with idiomatic phrases.",
-          "Use transition words to connect ideas naturally.",
-        ],
-      },
-      recommended_mode: "Speak",
-      recommended_scenarios: ["Job interview warm-up", "Resolving a delivery issue"],
-    };
-  }
-
-  if (total >= 2) {
-    return {
-      level: "Intermediate",
-      cefr_hint: "B1",
-      confidence: 76,
-      strengths: [
-        "Communicates core meaning effectively",
-        "Uses simple grammar structures reliably",
-        "Attempts detail beyond single-clause answers",
-      ],
-      weaknesses: [
-        "Verb tense consistency needs attention",
-        "Word choice can be repetitive",
-        "Sentence linking is sometimes abrupt",
-      ],
-      feedback: {
-        corrected_version:
-          input.writingSample.trim() || "I practice every day to speak more clearly in real conversations.",
-        key_mistakes: [
-          "Verb form and tense alignment",
-          "Articles and preposition choices",
-          "Word order in longer sentences",
-        ],
-        natural_alternatives: [
-          "Use one clear idea per sentence first.",
-          "Then combine ideas with simple connectors.",
-        ],
-      },
-      recommended_mode: "Text",
-      recommended_scenarios: ["Checking into a hotel", "Making weekend plans"],
-    };
-  }
-
-  return {
-    level: "Beginner",
-    cefr_hint: "A2",
-    confidence: 68,
-    strengths: [
-      "Can express basic personal information",
-      "Attempts complete short sentences",
-      "Shows willingness to use target language",
-    ],
-    weaknesses: [
-      "Frequent grammar agreement errors",
-      "Limited range of high-frequency vocabulary",
-      "Message clarity drops in longer sentences",
-    ],
-    feedback: {
-      corrected_version:
-        input.writingSample.trim() ||
-        "I am learning every day, and I want to speak with more confidence.",
-      key_mistakes: [
-        "Subject-verb agreement",
-        "Basic tense and article use",
-        "Simple sentence order",
-      ],
-      natural_alternatives: [
-        "Use short present-tense sentences first.",
-        "Practice common phrases for daily routines.",
-      ],
-    },
-    recommended_mode: "Text",
-    recommended_scenarios: ["Buying groceries", "Asking for directions"],
-  };
-}
-
-export function buildPlacementUserMessage(input: PlacementInput): string {
-  return [
-    `Target language: ${input.targetLanguage}`,
-    `MCQ summary: vocabScore ${input.vocabScore}/2, grammarScore ${input.grammarScore}/2`,
-    "Writing sample:",
-    input.writingSample.trim(),
-  ].join("\n");
-}
-
-export async function getPlacementResult(input: PlacementInput): Promise<PlacementResult> {
-  try {
-    const response = await fetch(PLACEMENT_API_PATH, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(input),
-    });
-
-    if (!response.ok) {
-      return buildMockResult(input);
-    }
-
-    const data = (await response.json()) as unknown;
-    return normalizePlacementResult(data);
-  } catch {
-    return buildMockResult(input);
-  }
 }

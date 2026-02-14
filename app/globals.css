@@ -74,6 +74,16 @@
   box-sizing: border-box;
 }
 
+::selection {
+  background: color-mix(in srgb, var(--accent) 32%, white 10%);
+  color: #07142a;
+}
+
+:root[data-theme="dark"] ::selection {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: #f3f8ff;
+}
+
 body {
   min-height: 100vh;
   background: radial-gradient(circle at 15% -5%, var(--surface-strong) 0%, var(--page-mid) 36%, var(--background) 100%);

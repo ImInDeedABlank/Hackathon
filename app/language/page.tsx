@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/LanguageProvider";
@@ -13,6 +13,11 @@ const LEARNING_LANGUAGES: LearningLanguage[] = ["English", "Arabic", "Spanish"];
 export default function LanguagePage() {
   const router = useRouter();
   const { lang, setLang, t } = useLanguage();
+  const isHydrated = useSyncExternalStore(
+    () => () => undefined,
+    () => true,
+    () => false,
+  );
   const [targetLanguage, setTargetLanguage] = useState<LearningLanguage>(() => {
     const saved = readString(STORAGE_KEYS.targetLanguage, "English");
     return saved === "Arabic" || saved === "Spanish" ? saved : "English";
@@ -21,10 +26,21 @@ export default function LanguagePage() {
   const handleContinue = () => {
     writeString(STORAGE_KEYS.uiLanguage, lang);
     writeString(STORAGE_KEYS.targetLanguage, targetLanguage);
-    router.push("/main");
+    router.push("/placement");
   };
 
-  const isRtl = lang === "ar";
+  const isRtl = isHydrated && lang === "ar";
+
+  if (!isHydrated) {
+    return (
+      <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+        <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
+        <div className="theme-panel relative mx-auto w-full max-w-2xl rounded-2xl p-6 backdrop-blur sm:p-8">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">LinguaSim</h1>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">

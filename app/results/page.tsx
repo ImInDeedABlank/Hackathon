@@ -6,7 +6,12 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 import ProgressBar from "@/app/components/ProgressBar";
 import type { PlacementResult } from "@/lib/placement";
-import { clearPlacementStorage, readPlacementResult } from "@/lib/placementStorage";
+import {
+  clearPlacementStorage,
+  readPlacementMeta,
+  readPlacementResult,
+  type PlacementMeta,
+} from "@/lib/placementStorage";
 
 function ResultCard({
   title,
@@ -32,10 +37,11 @@ export default function ResultsPage() {
   const router = useRouter();
   const { lang, t } = useLanguage();
   const [result] = useState<PlacementResult | null>(() => readPlacementResult());
+  const [meta] = useState<PlacementMeta | null>(() => readPlacementMeta());
 
   const handleTryAgain = () => {
     clearPlacementStorage();
-    router.push("/quiz");
+    router.push("/placement");
   };
 
   const handleContinue = () => {
@@ -49,13 +55,13 @@ export default function ResultsPage() {
       <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
         <div className={`theme-panel mx-auto w-full max-w-2xl rounded-2xl p-6 backdrop-blur ${isRtl ? "text-right" : "text-center"}`}>
           <h1 className="text-2xl font-semibold text-slate-900">{t("results_title")}</h1>
-          <p className="mt-2 text-sm text-slate-600">Complete the quiz and writing steps first.</p>
+          <p className="mt-2 text-sm text-slate-600">Complete the placement flow first.</p>
           <button
             type="button"
-            onClick={() => router.push("/quiz")}
+            onClick={() => router.push("/placement")}
             className="btn-glow mt-5 rounded-xl px-4 py-2.5 text-sm font-semibold"
           >
-            {t("quiz_title")}
+            Placement
           </button>
         </div>
       </main>
@@ -125,6 +131,9 @@ export default function ResultsPage() {
               </ul>
             </div>
           </div>
+          <p className="mt-3 text-sm text-slate-700">
+            <span className="font-medium text-slate-900">Grammar note:</span> {result.feedback.grammar_note}
+          </p>
         </ResultCard>
 
         <ResultCard title="Recommended Next Step" delay={340}>
@@ -138,6 +147,26 @@ export default function ResultsPage() {
             ))}
           </ul>
         </ResultCard>
+
+        {meta ? (
+          <ResultCard title="Focus Areas" delay={390}>
+            <ul className="list-disc space-y-1 ps-5">
+              {meta.focus_areas.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <p>
+                <span className="font-medium">Cycles completed:</span> {meta.summary.cyclesCompleted}
+              </p>
+              <p>
+                <span className="font-medium">Skills:</span> Vocab {meta.summary.skillScores.vocab}, Grammar{" "}
+                {meta.summary.skillScores.grammar}, Reading {meta.summary.skillScores.reading}, Writing{" "}
+                {meta.summary.skillScores.writing}
+              </p>
+            </div>
+          </ResultCard>
+        ) : null}
 
         <div className="flex flex-col gap-3 pb-4 sm:flex-row sm:justify-end">
           <button

@@ -52,7 +52,7 @@ function subscribe(onStoreChange: () => void): () => void {
 }
 
 export default function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const lang = useSyncExternalStore(subscribe, readStoredLanguage, () => "en");
+  const lang = useSyncExternalStore<UILang>(subscribe, readStoredLanguage, () => "en");
 
   const setLang = (nextLang: UILang) => {
     window.localStorage.setItem("uiLanguage", nextLang);

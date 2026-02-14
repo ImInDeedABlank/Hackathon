@@ -11,9 +11,9 @@ export const appRoutes: AppRoute[] = [
     description: "Entry page with app overview and quick navigation.",
   },
   {
-    href: "/quiz",
-    title: "Quiz",
-    description: "Quiz flow and progress checkpoint.",
+    href: "/placement",
+    title: "Placement",
+    description: "Adaptive interview and AI-generated placement test.",
   },
   {
     href: "/mode-select",
