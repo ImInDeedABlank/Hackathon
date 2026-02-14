@@ -1,7 +1,8 @@
 import type { PlacementResult } from "@/lib/placement";
 
 export const STORAGE_KEYS = {
-  targetLanguage: "linguasim.targetLanguage",
+  uiLanguage: "uiLanguage",
+  targetLanguage: "targetLanguage",
   vocabScore: "linguasim.vocabScore",
   grammarScore: "linguasim.grammarScore",
   writingSample: "linguasim.writingSample",

@@ -1,5 +1,10 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
+
 import WebGLHeroScene from "@/app/components/landing/WebGLHeroScene";
+import { t, type UiLanguage } from "@/lib/i18n";
 
 const quickStats = [
   { label: "Adaptive Questions", value: "4 + Writing" },
@@ -8,6 +13,14 @@ const quickStats = [
 ];
 
 export default function LandingHero() {
+  const [uiLanguage] = useState<UiLanguage>(() => {
+    if (typeof window === "undefined") {
+      return "en";
+    }
+    const saved = window.localStorage.getItem("uiLanguage");
+    return saved === "ar" ? "ar" : "en";
+  });
+
   return (
     <section className="mx-auto grid w-full max-w-6xl items-center gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
       <div className="relative">
@@ -24,10 +37,10 @@ export default function LandingHero() {
         </p>
         <div className="mt-8 flex flex-wrap gap-3 motion-safe:animate-[fade-up_750ms_ease-out_340ms_both]">
           <Link
-            href="/quiz"
+            href="/language"
             className="btn-glow inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-semibold transition hover:-translate-y-0.5"
           >
-            Start Placement
+            {t("Start Test", uiLanguage)}
           </Link>
           <Link
             href="/mode-select"

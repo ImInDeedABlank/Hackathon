@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, Space_Mono } from "next/font/google";
 import "./globals.css";
+import LanguageProvider from "@/app/components/LanguageProvider";
 import ThemeToggle from "@/app/components/theme/ThemeToggle";
 
 const spaceGrotesk = Space_Grotesk({
@@ -41,11 +42,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" dir="ltr" suppressHydrationWarning>
       <body
         className={`${spaceGrotesk.variable} ${spaceMono.variable} antialiased`}
       >
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <LanguageProvider />
         <ThemeToggle />
         {children}
       </body>

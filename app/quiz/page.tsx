@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import ProgressBar from "@/app/components/ProgressBar";
 import QuestionCard, { type Question } from "@/app/components/QuestionCard";
-import { STORAGE_KEYS, writeNumber, writeString } from "@/lib/placementStorage";
+import { STORAGE_KEYS, readString, writeNumber, writeString } from "@/lib/placementStorage";
 
 const QUESTIONS: Question[] = [
   {
@@ -45,8 +45,10 @@ export default function QuizPage() {
 
   useEffect(() => {
     const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-    const queryLanguage = query?.get("targetLanguage") ?? query?.get("lang") ?? "English";
-    writeString(STORAGE_KEYS.targetLanguage, queryLanguage);
+    const queryLanguage = query?.get("targetLanguage") ?? query?.get("lang");
+    const storedLanguage = readString(STORAGE_KEYS.targetLanguage, "English");
+    const nextLanguage = queryLanguage ?? storedLanguage;
+    writeString(STORAGE_KEYS.targetLanguage, nextLanguage);
   }, []);
 
   const currentQuestion = QUESTIONS[currentIndex];
