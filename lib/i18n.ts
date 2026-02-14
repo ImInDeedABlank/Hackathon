@@ -1,36 +1,116 @@
-export type UiLanguage = "en" | "ar";
+﻿export type UILang = "en" | "ar";
 
-type TranslationKey =
-  | "Continue"
-  | "App Language"
-  | "I want to learn"
-  | "English"
-  | "Arabic"
-  | "Spanish"
-  | "Start Test";
-
-const DICTIONARY: Record<UiLanguage, Record<TranslationKey, string>> = {
+const dictionary: Record<UILang, Record<string, string>> = {
   en: {
-    Continue: "Continue",
-    "App Language": "App Language",
-    "I want to learn": "I want to learn",
-    English: "English",
-    Arabic: "Arabic",
-    Spanish: "Spanish",
-    "Start Test": "Start Test",
+    app_title: "LinguaSim",
+    start_test: "Start Test",
+    continue: "Continue",
+    back: "Back",
+    next: "Next",
+    app_language: "App Language",
+    learn_language: "I want to learn",
+    quiz_title: "Quick MCQ Check",
+    results_title: "Your Placement Result",
+    strengths: "Strengths",
+    weaknesses: "Weaknesses",
+    mode_title: "Choose Your Mode",
+    speak_mode: "Speak Mode",
+    text_mode: "Text Mode",
+    scenarios_title: "Select a Scenario",
+    chat_title: "Guided Practice",
+    send: "Send",
+    mic: "Microphone",
+    end_session: "End Session",
+    try_again: "Try again",
+    view_summary: "View Summary",
+    english: "English",
+    arabic: "Arabic",
+    spanish: "Spanish",
+    continue_to_scenarios: "Continue to Scenarios",
+    choose_mode_hint: "Pick how you want to practice before selecting a scenario.",
+    quiz_hint: "Answer 4 quick questions. We use this together with your writing sample.",
+    writing_title: "Short Writing Check",
+    writing_submit: "Submit Writing",
+    evaluating: "Evaluating...",
+    hero_title: "Learn through a scene, then train through real conversation flow.",
+    hero_subtitle:
+      "Start with a smart placement check, move into scenario-driven practice, and keep momentum with guided feedback that feels interactive instead of static.",
+    view_learning_modes: "View Learning Modes",
+    stat_adaptive_questions: "Adaptive Questions",
+    stat_adaptive_questions_value: "4 + Writing",
+    stat_placement_steps: "Placement Steps",
+    stat_placement_steps_value: "3 Guided Screens",
+    stat_live_feedback: "Live Feedback",
+    stat_live_feedback_value: "Vocabulary + Grammar",
+    journey_1_title: "Discover your baseline",
+    journey_1_text: "Start with fast vocabulary and grammar checks so the system tunes difficulty instantly.",
+    journey_2_title: "Write with intent",
+    journey_2_text: "Submit a short writing sample and get structured language feedback, not just a score.",
+    journey_3_title: "Practice in context",
+    journey_3_text: "Move into scenarios that feel like real conversations with clear next-step recommendations.",
+    highlight_depth_layers_title: "Depth Layers",
+    highlight_depth_layers_text: "Glass cards, radial backdrops, and moving light cues create a stronger visual hierarchy.",
+    highlight_micro_title: "Micro-Interactions",
+    highlight_micro_text: "Buttons, cards, and choices respond with lift, glow, and motion-safe transitions.",
+    highlight_story_title: "Story Flow",
+    highlight_story_text: "Users are guided from intro to placement to mode choice instead of dropped into a static form."
   },
   ar: {
-    Continue: "متابعة",
-    "App Language": "لغة التطبيق",
-    "I want to learn": "أريد أن أتعلم",
-    English: "الإنجليزية",
-    Arabic: "العربية",
-    Spanish: "الإسبانية",
-    "Start Test": "ابدأ الاختبار",
-  },
+    app_title: "لينجواسيم",
+    start_test: "ابدأ الاختبار",
+    continue: "متابعة",
+    back: "رجوع",
+    next: "التالي",
+    app_language: "لغة التطبيق",
+    learn_language: "أريد أن أتعلم",
+    quiz_title: "اختبار سريع متعدد الخيارات",
+    results_title: "نتيجة تحديد المستوى",
+    strengths: "نقاط القوة",
+    weaknesses: "نقاط الضعف",
+    mode_title: "اختر نمط التدريب",
+    speak_mode: "نمط التحدث",
+    text_mode: "نمط الكتابة",
+    scenarios_title: "اختر سيناريو",
+    chat_title: "تدريب موجّه",
+    send: "إرسال",
+    mic: "الميكروفون",
+    end_session: "إنهاء الجلسة",
+    try_again: "إعادة المحاولة",
+    view_summary: "عرض الملخص",
+    english: "الإنجليزية",
+    arabic: "العربية",
+    spanish: "الإسبانية",
+    continue_to_scenarios: "المتابعة إلى السيناريوهات",
+    choose_mode_hint: "اختر طريقة التدريب المناسبة قبل تحديد السيناريو.",
+    quiz_hint: "أجب عن 4 أسئلة سريعة، مع عينة الكتابة لتحديد مستواك.",
+    writing_title: "تقييم كتابة قصير",
+    writing_submit: "إرسال الكتابة",
+    evaluating: "جاري التقييم...",
+    hero_title: "تعلّم من خلال المواقف، ثم تدرب عبر محادثة واقعية.",
+    hero_subtitle:
+      "ابدأ بتقييم ذكي للمستوى، ثم انتقل إلى تدريب مبني على السيناريو مع تغذية راجعة موجّهة تحافظ على تقدّمك.",
+    view_learning_modes: "عرض أنماط التعلم",
+    stat_adaptive_questions: "أسئلة تكيفية",
+    stat_adaptive_questions_value: "4 + كتابة",
+    stat_placement_steps: "خطوات التقييم",
+    stat_placement_steps_value: "3 شاشات موجهة",
+    stat_live_feedback: "تغذية راجعة مباشرة",
+    stat_live_feedback_value: "المفردات + القواعد",
+    journey_1_title: "اكتشف مستواك الحالي",
+    journey_1_text: "ابدأ باختبارات سريعة في المفردات والقواعد ليتم ضبط مستوى الصعوبة مباشرة.",
+    journey_2_title: "اكتب بهدف واضح",
+    journey_2_text: "أرسل عينة كتابة قصيرة لتحصل على ملاحظات لغوية منظمة، وليس مجرد درجة.",
+    journey_3_title: "تدرب ضمن سياق واقعي",
+    journey_3_text: "انتقل إلى سيناريوهات تشبه المحادثات الحقيقية مع توصيات واضحة للخطوة التالية.",
+    highlight_depth_layers_title: "طبقات بصرية أعمق",
+    highlight_depth_layers_text: "البطاقات الزجاجية والخلفيات الشعاعية وحركة الإضاءة تمنح واجهة أوضح وأكثر ترتيبًا.",
+    highlight_micro_title: "تفاعلات دقيقة",
+    highlight_micro_text: "الأزرار والبطاقات والخيارات تستجيب بحركة سلسة وإحساس تفاعلي واضح.",
+    highlight_story_title: "تدفق رحلة التعلم",
+    highlight_story_text: "يتم توجيه المستخدم من البداية إلى التقييم ثم اختيار النمط بدل الانتقال إلى نموذج ثابت."
+  }
 };
 
-export function t(key: TranslationKey, uiLanguage: UiLanguage): string {
-  return DICTIONARY[uiLanguage][key] ?? key;
+export function t(key: string, lang: UILang): string {
+  return dictionary[lang]?.[key] ?? dictionary.en[key] ?? key;
 }
-

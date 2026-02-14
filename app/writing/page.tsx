@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { useLanguage } from "@/components/LanguageProvider";
 import ProgressBar from "@/app/components/ProgressBar";
 import { getPlacementResult } from "@/lib/placement";
 import {
@@ -20,6 +21,7 @@ function countSentences(text: string): number {
 
 export default function WritingPage() {
   const router = useRouter();
+  const { lang, t } = useLanguage();
   const [targetLanguage] = useState(() => readString(STORAGE_KEYS.targetLanguage, "English"));
   const [vocabScore] = useState(() => readNumber(STORAGE_KEYS.vocabScore, 0));
   const [grammarScore] = useState(() => readNumber(STORAGE_KEYS.grammarScore, 0));
@@ -54,20 +56,22 @@ export default function WritingPage() {
     router.push("/results");
   };
 
+  const isRtl = lang === "ar";
+
   return (
     <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
       <div className="relative mx-auto flex w-full max-w-2xl flex-col gap-5">
-        <header className="theme-panel space-y-3 rounded-2xl p-5 backdrop-blur motion-safe:animate-[fade-up_600ms_ease-out_both] sm:p-6">
+        <header className={`theme-panel space-y-3 rounded-2xl p-5 backdrop-blur motion-safe:animate-[fade-up_600ms_ease-out_both] sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Placement Step 2 of 3</p>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Short Writing Check</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{t("writing_title")}</h1>
           <p className="text-sm text-slate-600">
             Write 1 to 3 sentences in {targetLanguage} so we can estimate your placement level.
           </p>
           <ProgressBar current={2} total={3} label="Placement progress" />
         </header>
 
-        <section className="theme-panel rounded-2xl p-5 backdrop-blur motion-safe:animate-[card-enter_460ms_ease-out_both] sm:p-6">
+        <section className={`theme-panel rounded-2xl p-5 backdrop-blur motion-safe:animate-[card-enter_460ms_ease-out_both] sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
           <label htmlFor="writing-sample" className="block text-sm font-medium text-slate-800">
             Prompt: Describe your typical day and one thing you want to improve in this language.
           </label>
@@ -90,7 +94,7 @@ export default function WritingPage() {
             disabled={!canSubmit}
             className="btn-glow mt-5 inline-flex w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
-            {isSubmitting ? "Evaluating..." : "Submit Writing"}
+            {isSubmitting ? t("evaluating") : t("writing_submit")}
           </button>
         </section>
       </div>

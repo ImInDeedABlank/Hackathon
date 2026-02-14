@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, Space_Mono } from "next/font/google";
 import "./globals.css";
-import LanguageProvider from "@/app/components/LanguageProvider";
+import LanguageProvider from "@/components/LanguageProvider";
 import ThemeToggle from "@/app/components/theme/ThemeToggle";
 
 const spaceGrotesk = Space_Grotesk({
@@ -47,9 +47,10 @@ export default function RootLayout({
         className={`${spaceGrotesk.variable} ${spaceMono.variable} antialiased`}
       >
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <LanguageProvider />
-        <ThemeToggle />
-        {children}
+        <LanguageProvider>
+          <ThemeToggle />
+          {children}
+        </LanguageProvider>
       </body>
     </html>
   );

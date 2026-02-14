@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { useLanguage } from "@/components/LanguageProvider";
 import ChatBubble from "@/app/components/ChatBubble";
 import FeedbackCard, { type MockFeedback } from "@/app/components/FeedbackCard";
 import ProgressBar from "@/app/components/ProgressBar";
@@ -53,7 +54,8 @@ function buildFeedback(userText: string): MockFeedback {
 
 export default function ChatPage() {
   const router = useRouter();
-  const [selectedMode] = useState(() => readString(STORAGE_KEYS.selectedMode, "Text Chat"));
+  const { lang, t } = useLanguage();
+  const [selectedMode] = useState(() => readString(STORAGE_KEYS.selectedMode, "Text"));
   const [selectedScenario] = useState(() => readString(STORAGE_KEYS.selectedScenario, "Ordering Food"));
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
@@ -71,6 +73,7 @@ export default function ChatPage() {
 
   const isComplete = exchanges >= MAX_EXCHANGES;
   const canSend = input.trim().length > 0 && !isComplete;
+  const isSpeakMode = selectedMode === "Speak";
 
   const handleSend = () => {
     if (!canSend) {
@@ -95,48 +98,60 @@ export default function ChatPage() {
     writeNumber(STORAGE_KEYS.sessionExchanges, nextExchange);
   };
 
+  const isRtl = lang === "ar";
+
   return (
     <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
       <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-5">
-        <header className="theme-panel space-y-3 rounded-2xl p-5 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Guided Practice</p>
+        <header className={`theme-panel space-y-3 rounded-2xl p-5 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">{t("chat_title")}</p>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{selectedScenario}</h1>
           <p className="text-sm text-slate-600">
-            Mode: <span className="font-semibold text-slate-900">{selectedMode}</span>
+            {t("mode_title")}: <span className="font-semibold text-slate-900">{isSpeakMode ? t("speak_mode") : t("text_mode")}</span>
           </p>
           <ProgressBar current={exchanges} total={MAX_EXCHANGES} label="Session progress" />
         </header>
 
         <section className="theme-panel rounded-2xl p-5 backdrop-blur sm:p-6">
-          <div className="max-h-[22rem] space-y-3 overflow-y-auto pr-1">
+          <div className="max-h-[22rem] space-y-3 overflow-y-auto pe-1">
             {messages.map((message) => (
               <ChatBubble key={message.id} role={message.role} text={message.text} />
             ))}
           </div>
 
           <div className="mt-4 flex flex-col gap-3">
+            {isSpeakMode ? (
+              <button
+                type="button"
+                className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
+                onClick={() => setInput((current) => current || "I need help with my booking details.")}
+                disabled={isComplete}
+              >
+                {t("mic")}
+              </button>
+            ) : null}
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder={isComplete ? "Session complete. Open summary." : "Type your next message..."}
               disabled={isComplete}
-              className="w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className={`w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 disabled:cursor-not-allowed disabled:opacity-60 ${isRtl ? "text-right" : "text-left"}`}
             />
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={() => router.push("/scenarios")}
+                onClick={() => router.push("/summary")}
                 className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
               >
-                Change Scenario
+                {t("view_summary")}
               </button>
               <button
                 type="button"
                 onClick={() => router.push("/summary")}
                 className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
               >
-                Open Summary
+                {t("end_session")}
               </button>
               <button
                 type="button"
@@ -144,7 +159,7 @@ export default function ChatPage() {
                 disabled={!canSend}
                 className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Send
+                {t("send")}
               </button>
             </div>
           </div>

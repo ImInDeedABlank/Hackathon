@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { useLanguage } from "@/components/LanguageProvider";
 import ScenarioCard from "@/app/components/ScenarioCard";
 import {
   STORAGE_KEYS,
@@ -22,8 +23,9 @@ const DEFAULT_SCENARIOS = [
 
 export default function ScenariosPage() {
   const router = useRouter();
+  const { lang, t } = useLanguage();
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
-  const [selectedMode] = useState(() => readString(STORAGE_KEYS.selectedMode, "Text Chat"));
+  const [selectedMode] = useState(() => readString(STORAGE_KEYS.selectedMode, "Text"));
   const [recommendedScenarios] = useState(() => readPlacementResult()?.recommended_scenarios ?? []);
 
   const scenarioOptions = useMemo(() => {
@@ -38,15 +40,18 @@ export default function ScenariosPage() {
     router.push("/chat");
   };
 
+  const modeLabel = selectedMode === "Speak" ? t("speak_mode") : t("text_mode");
+  const isRtl = lang === "ar";
+
   return (
     <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
       <div className="theme-top-fade pointer-events-none absolute left-1/2 top-0 h-56 w-[40rem] -translate-x-1/2" />
-      <div className="theme-panel relative mx-auto w-full max-w-4xl rounded-2xl p-6 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8">
+      <div className={`theme-panel relative mx-auto w-full max-w-4xl rounded-2xl p-6 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8 ${isRtl ? "text-right" : "text-left"}`}>
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Session Setup</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Select a Scenario</h1>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{t("scenarios_title")}</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Mode: <span className="font-semibold text-slate-900">{selectedMode}</span>
+          {t("mode_title")}: <span className="font-semibold text-slate-900">{modeLabel}</span>
         </p>
         <p className="mt-1 text-sm text-slate-600">Choose one real-life context to start the conversation.</p>
 

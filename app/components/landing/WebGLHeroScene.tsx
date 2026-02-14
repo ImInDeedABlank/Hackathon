@@ -18,6 +18,7 @@ function createStarField(count: number) {
 
 export default function WebGLHeroScene() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fallbackRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -30,13 +31,40 @@ export default function WebGLHeroScene() {
       return;
     }
 
+    const showFallback = () => {
+      canvas.style.display = "none";
+      if (fallbackRef.current) {
+        fallbackRef.current.style.display = "flex";
+      }
+    };
+
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
+    const contextAttributes: WebGLContextAttributes = {
       alpha: true,
-      powerPreference: "high-performance",
-    });
+      antialias: true,
+      powerPreference: "default",
+    };
+    const webgl2 = canvas.getContext("webgl2", contextAttributes) as WebGL2RenderingContext | null;
+    const webgl = canvas.getContext("webgl", contextAttributes) as WebGLRenderingContext | null;
+    const experimental = canvas.getContext("experimental-webgl", contextAttributes) as WebGLRenderingContext | null;
+    const gl: WebGL2RenderingContext | WebGLRenderingContext | null = webgl2 ?? webgl ?? experimental;
+    if (!gl) {
+      showFallback();
+      return;
+    }
+
+    let renderer: THREE.WebGLRenderer | null = null;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        context: gl,
+        antialias: true,
+        alpha: true,
+      });
+    } catch {
+      showFallback();
+      return;
+    }
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -126,7 +154,13 @@ export default function WebGLHeroScene() {
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, -targetY * 0.3, 0.06);
       camera.lookAt(0, 0, 0);
 
-      renderer.render(scene, camera);
+      try {
+        renderer.render(scene, camera);
+      } catch {
+        window.cancelAnimationFrame(frameId);
+        showFallback();
+        return;
+      }
       frameId = window.requestAnimationFrame(renderFrame);
     };
 
@@ -143,8 +177,8 @@ export default function WebGLHeroScene() {
       coreMaterial.dispose();
       haloMaterial.dispose();
       starsMaterial.dispose();
-      renderer.dispose();
-      renderer.forceContextLoss();
+      renderer?.dispose();
+      renderer?.forceContextLoss();
     };
   }, []);
 
@@ -152,6 +186,14 @@ export default function WebGLHeroScene() {
     <div className="relative aspect-square w-full max-w-[540px] overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.85),rgba(255,255,255,0.35)_45%,rgba(173,220,255,0.24)_100%)] shadow-[0_35px_80px_-38px_rgba(28,64,138,0.7)] backdrop-blur-xl">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(130deg,rgba(16,34,78,0.08),transparent_35%,rgba(67,143,255,0.2))]" />
       <canvas ref={canvasRef} className="h-full w-full" aria-hidden="true" />
+      <div
+        ref={fallbackRef}
+        className="absolute inset-0 hidden items-center justify-center bg-[radial-gradient(circle_at_50%_40%,rgba(111,189,255,0.35),rgba(255,255,255,0.06)_55%,transparent_70%)]"
+      >
+        <div className="rounded-2xl border border-white/60 bg-white/65 px-4 py-2 text-xs font-semibold tracking-wide text-slate-700 shadow-sm backdrop-blur">
+          Interactive preview unavailable on this device
+        </div>
+      </div>
       <div className="pointer-events-none absolute bottom-4 left-4 rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs font-medium tracking-wide text-slate-700 backdrop-blur">
         Interactive learning space
       </div>

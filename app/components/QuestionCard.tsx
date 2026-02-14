@@ -1,3 +1,7 @@
+﻿"use client";
+
+import { useLanguage } from "@/components/LanguageProvider";
+
 export type Question = {
   id: string;
   type: "vocab" | "grammar";
@@ -29,8 +33,11 @@ export default function QuestionCard({
   isFirst,
   isLast,
 }: QuestionCardProps) {
+  const { lang, t } = useLanguage();
+  const isRtl = lang === "ar";
+
   return (
-    <section className="theme-panel w-full rounded-2xl p-5 backdrop-blur motion-safe:animate-[card-enter_420ms_ease-out_both] sm:p-6">
+    <section className={`theme-panel w-full rounded-2xl p-5 backdrop-blur motion-safe:animate-[card-enter_420ms_ease-out_both] sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">
         {question.type} question {index + 1} of {total}
       </p>
@@ -46,7 +53,7 @@ export default function QuestionCard({
               onClick={() => onSelect(option)}
               className={`quiz-option group w-full rounded-xl px-4 py-3 text-left text-sm transition duration-200 motion-safe:animate-[fade-up_420ms_ease-out_both] sm:text-base ${
                 isSelected ? "quiz-option-selected" : "hover:-translate-y-0.5"
-              }`}
+              } ${isRtl ? "text-right" : "text-left"}`}
               style={{ animationDelay: `${optionIndex * 70}ms` }}
             >
               <span className="flex items-center justify-between gap-3">
@@ -71,7 +78,7 @@ export default function QuestionCard({
           disabled={isFirst}
           className="btn-outline rounded-lg px-4 py-2 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Back
+          {t("back")}
         </button>
         <button
           type="button"
@@ -79,7 +86,7 @@ export default function QuestionCard({
           disabled={!selectedAnswer}
           className="btn-glow rounded-lg px-4 py-2 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isLast ? "Continue" : "Next"}
+          {isLast ? t("continue") : t("next")}
         </button>
       </div>
     </section>

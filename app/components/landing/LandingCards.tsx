@@ -1,39 +1,45 @@
-const journeySteps = [
-  {
-    step: "01",
-    title: "Discover your baseline",
-    text: "Start with fast vocabulary and grammar checks so the system tunes difficulty instantly.",
-  },
-  {
-    step: "02",
-    title: "Write with intent",
-    text: "Submit a short writing sample and get structured language feedback, not just a score.",
-  },
-  {
-    step: "03",
-    title: "Practice in context",
-    text: "Move into scenarios that feel like real conversations with clear next-step recommendations.",
-  },
-];
+"use client";
 
-const interactionHighlights = [
-  {
-    title: "Depth Layers",
-    text: "Glass cards, radial backdrops, and moving light cues create a stronger visual hierarchy.",
-  },
-  {
-    title: "Micro-Interactions",
-    text: "Buttons, cards, and choices respond with lift, glow, and motion-safe transitions.",
-  },
-  {
-    title: "Story Flow",
-    text: "Users are guided from intro to placement to mode choice instead of dropped into a static form.",
-  },
-];
+import { useLanguage } from "@/components/LanguageProvider";
 
 export default function LandingCards() {
+  const { lang, t } = useLanguage();
+  const isRtl = lang === "ar";
+  const journeySteps = [
+    {
+      step: "01",
+      title: t("journey_1_title"),
+      text: t("journey_1_text"),
+    },
+    {
+      step: "02",
+      title: t("journey_2_title"),
+      text: t("journey_2_text"),
+    },
+    {
+      step: "03",
+      title: t("journey_3_title"),
+      text: t("journey_3_text"),
+    },
+  ];
+
+  const interactionHighlights = [
+    {
+      title: t("highlight_depth_layers_title"),
+      text: t("highlight_depth_layers_text"),
+    },
+    {
+      title: t("highlight_micro_title"),
+      text: t("highlight_micro_text"),
+    },
+    {
+      title: t("highlight_story_title"),
+      text: t("highlight_story_text"),
+    },
+  ];
+
   return (
-    <section className="mx-auto mt-14 w-full max-w-6xl space-y-8">
+    <section className={`mx-auto mt-14 w-full max-w-6xl space-y-8 ${isRtl ? "text-right" : "text-left"}`}>
       <div className="grid gap-4 lg:grid-cols-3">
         {journeySteps.map((item, index) => (
           <article
