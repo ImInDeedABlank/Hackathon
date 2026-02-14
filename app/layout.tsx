@@ -3,6 +3,7 @@ import { Space_Grotesk, Space_Mono } from "next/font/google";
 import "./globals.css";
 import LanguageProvider from "@/components/LanguageProvider";
 import ThemeToggle from "@/app/components/theme/ThemeToggle";
+import BottomNav from "@/app/components/navigation/BottomNav";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
@@ -49,7 +50,8 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <LanguageProvider>
           <ThemeToggle />
-          {children}
+          <div className="app-content-with-nav">{children}</div>
+          <BottomNav />
         </LanguageProvider>
       </body>
     </html>

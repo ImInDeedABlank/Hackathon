@@ -37,29 +37,23 @@ export default function WebGLHeroScene() {
         fallbackRef.current.style.display = "flex";
       }
     };
+    const hideFallback = () => {
+      canvas.style.display = "";
+      if (fallbackRef.current) {
+        fallbackRef.current.style.display = "none";
+      }
+    };
+
+    hideFallback();
 
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const contextAttributes: WebGLContextAttributes = {
-      alpha: true,
-      antialias: true,
-      powerPreference: "default",
-    };
-    const webgl2 = canvas.getContext("webgl2", contextAttributes) as WebGL2RenderingContext | null;
-    const webgl = canvas.getContext("webgl", contextAttributes) as WebGLRenderingContext | null;
-    const experimental = canvas.getContext("experimental-webgl", contextAttributes) as WebGLRenderingContext | null;
-    const gl: WebGL2RenderingContext | WebGLRenderingContext | null = webgl2 ?? webgl ?? experimental;
-    if (!gl) {
-      showFallback();
-      return;
-    }
-
     let renderer: THREE.WebGLRenderer | null = null;
     try {
       renderer = new THREE.WebGLRenderer({
         canvas,
-        context: gl,
         antialias: true,
         alpha: true,
+        powerPreference: "high-performance",
       });
     } catch {
       showFallback();
@@ -119,6 +113,12 @@ export default function WebGLHeroScene() {
 
     let targetX = 0;
     let targetY = 0;
+    let frameId = 0;
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      window.cancelAnimationFrame(frameId);
+      showFallback();
+    };
     const handlePointerMove = (event: PointerEvent) => {
       const bounds = parent.getBoundingClientRect();
       const x = (event.clientX - bounds.left) / bounds.width;
@@ -127,7 +127,6 @@ export default function WebGLHeroScene() {
       targetY = (y - 0.5) * 2;
     };
 
-    let frameId = 0;
     const clock = new THREE.Clock();
 
     const renderFrame = () => {
@@ -165,10 +164,12 @@ export default function WebGLHeroScene() {
     };
 
     frameId = window.requestAnimationFrame(renderFrame);
+    canvas.addEventListener("webglcontextlost", handleContextLost, { passive: false });
     parent.addEventListener("pointermove", handlePointerMove);
 
     return () => {
       window.cancelAnimationFrame(frameId);
+      canvas.removeEventListener("webglcontextlost", handleContextLost);
       parent.removeEventListener("pointermove", handlePointerMove);
 
       coreGeometry.dispose();
@@ -178,7 +179,6 @@ export default function WebGLHeroScene() {
       haloMaterial.dispose();
       starsMaterial.dispose();
       renderer?.dispose();
-      renderer?.forceContextLoss();
     };
   }, []);
 

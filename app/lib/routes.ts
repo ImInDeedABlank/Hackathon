@@ -36,6 +36,16 @@ export const appRoutes: AppRoute[] = [
     description: "Main conversational experience.",
   },
   {
+    href: "/vocab-quiz",
+    title: "Vocab Quiz",
+    description: "Placeholder route for upcoming vocabulary mini-games.",
+  },
+  {
+    href: "/learning-videos",
+    title: "Learning Videos",
+    description: "Placeholder route for upcoming guided video lessons.",
+  },
+  {
     href: "/summary",
     title: "Summary",
     description: "Review mode, scenario, and completed exchanges.",
