@@ -28,10 +28,13 @@ import {
   type TargetLanguage,
   type UILanguage,
 } from "@/lib/adaptivePlacement";
+import {
+  callGeminiJson,
+  defaultGeminiDebugInfo,
+  isDiagnosticRequest,
+  type GeminiDebugInfo,
+} from "@/lib/geminiClient";
 import { buildPlacementSystemPrompt, buildPlacementUserPrompt } from "@/lib/placementPrompt";
-
-const API_URL = "https://api.openai.com/v1/chat/completions";
-const MODEL = "gpt-4o-mini";
 const SESSION_TTL_MS = 1000 * 60 * 90;
 
 type SessionRecord = {
@@ -270,49 +273,6 @@ function parseStepRequest(raw: unknown): PlacementStepRequest {
     state: normalizePlacementState(source.state),
     last,
   };
-}
-
-async function callOpenAI({
-  apiKey,
-  systemPrompt,
-  userPrompt,
-}: {
-  apiKey: string;
-  systemPrompt: string;
-  userPrompt: string;
-}): Promise<unknown | null> {
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.3,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string | null } }>;
-  };
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    return null;
-  }
-  try {
-    return JSON.parse(content) as unknown;
-  } catch {
-    return null;
-  }
 }
 
 function getSession(sessionId: string | undefined, uiLanguage: UILanguage, targetLanguage: TargetLanguage): SessionRecord {
@@ -607,28 +567,106 @@ function readQuestionsFromStartPayload(raw: unknown): [string, string, string] |
   return questions.length === 3 ? [questions[0], questions[1], questions[2]] : null;
 }
 
+function coerceStepResponseRaw(raw: unknown): unknown {
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return coerceStepResponseRaw(parsed);
+    } catch {
+      return raw;
+    }
+  }
+
+  if (!raw || typeof raw !== "object") {
+    return raw;
+  }
+
+  const source = structuredClone(raw as Record<string, unknown>) as Record<string, unknown>;
+  if (source.done !== false) {
+    const decision = source.decision && typeof source.decision === "object" ? (source.decision as Record<string, unknown>) : {};
+    if (typeof decision.reason !== "string") {
+      decision.reason = "";
+    }
+    if (typeof decision.stopExam !== "boolean") {
+      decision.stopExam = true;
+    }
+    source.decision = decision;
+    if (!source.state || typeof source.state !== "object") {
+      source.state = defaultPlacementState();
+    }
+    return source;
+  }
+
+  const decision = source.decision && typeof source.decision === "object" ? (source.decision as Record<string, unknown>) : {};
+  if (typeof decision.reason !== "string") {
+    decision.reason = "";
+  }
+  if (typeof decision.stopExam !== "boolean") {
+    decision.stopExam = false;
+  }
+  if ("endCycle" in decision && typeof decision.endCycle !== "boolean") {
+    decision.endCycle = false;
+  }
+  source.decision = decision;
+
+  if (!source.state || typeof source.state !== "object") {
+    source.state = defaultPlacementState();
+  }
+
+  const grading = source.grading && typeof source.grading === "object" ? (source.grading as Record<string, unknown>) : null;
+  if (!grading) {
+    source.grading = {
+      wasCorrect: false,
+      scoreDelta: 0,
+      notes: "Auto-normalized grading note.",
+    };
+    return source;
+  }
+
+  if (typeof grading.wasCorrect !== "boolean") {
+    grading.wasCorrect = false;
+  }
+  if (typeof grading.scoreDelta !== "number" || Number.isNaN(grading.scoreDelta) || !Number.isFinite(grading.scoreDelta)) {
+    grading.scoreDelta = 0;
+  }
+  if (typeof grading.notes !== "string") {
+    grading.notes = "Auto-normalized grading note.";
+  }
+
+  source.grading = grading;
+  return source;
+}
+
 function normalizeStepResponseOrNull(raw: unknown): PlacementStepQuestionResponse | PlacementStepFinalResponse | null {
-  if (!validatePlacementStepResponse(raw)) return null;
-  if (raw.done) {
+  const coerced = coerceStepResponseRaw(raw);
+  const issues: string[] = [];
+  if (!validatePlacementStepResponse(coerced, issues)) {
+    console.error(
+      `[api/placement] validatePlacementStepResponse failed reason="${issues[0] ?? "unknown"}" payload="${JSON.stringify(coerced).slice(0, 2000)}"`,
+    );
+    return null;
+  }
+  const normalizedRaw = coerced;
+  if (normalizedRaw.done) {
     return {
       done: true,
       decision: {
         stopExam: true,
-        reason: raw.decision.reason,
+        reason: normalizedRaw.decision.reason,
       },
-      state: normalizePlacementState(raw.state),
+      state: normalizePlacementState(normalizedRaw.state),
       placement: {
-        ...raw.placement,
-        confidence: clamp(Math.round(raw.placement.confidence), 0, 100),
+        ...normalizedRaw.placement,
+        confidence: clamp(Math.round(normalizedRaw.placement.confidence), 0, 100),
       },
-      focus_areas: [raw.focus_areas[0], raw.focus_areas[1], raw.focus_areas[2]],
+      focus_areas: [normalizedRaw.focus_areas[0], normalizedRaw.focus_areas[1], normalizedRaw.focus_areas[2]],
       summary: {
-        cyclesCompleted: clamp(Math.round(raw.summary.cyclesCompleted), 0, 5),
+        cyclesCompleted: clamp(Math.round(normalizedRaw.summary.cyclesCompleted), 0, 5),
         skillScores: {
-          vocab: clamp(Math.round(raw.summary.skillScores.vocab), 0, 100),
-          grammar: clamp(Math.round(raw.summary.skillScores.grammar), 0, 100),
-          reading: clamp(Math.round(raw.summary.skillScores.reading), 0, 100),
-          writing: clamp(Math.round(raw.summary.skillScores.writing), 0, 100),
+          vocab: clamp(Math.round(normalizedRaw.summary.skillScores.vocab), 0, 100),
+          grammar: clamp(Math.round(normalizedRaw.summary.skillScores.grammar), 0, 100),
+          reading: clamp(Math.round(normalizedRaw.summary.skillScores.reading), 0, 100),
+          writing: clamp(Math.round(normalizedRaw.summary.skillScores.writing), 0, 100),
         },
       },
     };
@@ -636,45 +674,80 @@ function normalizeStepResponseOrNull(raw: unknown): PlacementStepQuestionRespons
   return {
     done: false,
     decision: {
-      endCycle: !!raw.decision.endCycle,
-      stopExam: !!raw.decision.stopExam,
-      reason: raw.decision.reason,
+      endCycle: !!normalizedRaw.decision.endCycle,
+      stopExam: !!normalizedRaw.decision.stopExam,
+      reason: normalizedRaw.decision.reason,
     },
-    state: normalizePlacementState(raw.state),
+    state: normalizePlacementState(normalizedRaw.state),
     grading: {
-      wasCorrect: raw.grading.wasCorrect,
-      scoreDelta: Math.round(raw.grading.scoreDelta),
-      notes: raw.grading.notes,
+      wasCorrect: normalizedRaw.grading.wasCorrect,
+      scoreDelta: Math.round(normalizedRaw.grading.scoreDelta),
+      notes: normalizedRaw.grading.notes,
     },
-    question: raw.question,
+    question: normalizedRaw.question,
   };
 }
 
-async function handleStart(raw: unknown): Promise<NextResponse<PlacementStartResponse>> {
+function withPlacementDebug<T extends object>(
+  body: T,
+  {
+    diagnostic,
+    debug,
+    error,
+  }: {
+    diagnostic: boolean;
+    debug?: GeminiDebugInfo;
+    error?: string;
+  },
+): T & { debug?: GeminiDebugInfo; error?: string } {
+  if (!diagnostic && !error) {
+    return body;
+  }
+  return {
+    ...body,
+    ...(error ? { error } : {}),
+    ...(diagnostic ? { debug: debug ?? defaultGeminiDebugInfo() } : {}),
+  };
+}
+
+async function handleStart(raw: unknown, diagnostic: boolean): Promise<NextResponse> {
   cleanupSessions();
   const body = parseStartRequest(raw);
-  const apiKey = process.env.OPENAI_API_KEY;
   const session = getSession(undefined, body.uiLanguage, body.targetLanguage);
   const fallbackQuestions = fallbackInterviewQuestions(body.uiLanguage, body.targetLanguage);
   let interviewQuestions = fallbackQuestions;
+  const fallbackStatus = 200;
+  let fallbackError: string | undefined;
 
-  if (apiKey) {
-    const parsed = await callOpenAI({
-      apiKey,
-      systemPrompt: buildPlacementSystemPrompt({
-        mode: "start",
-        uiLanguage: body.uiLanguage,
-        targetLanguage: body.targetLanguage,
-      }),
-      userPrompt: buildPlacementUserPrompt({
-        mode: "start",
-        uiLanguage: body.uiLanguage,
-        targetLanguage: body.targetLanguage,
-      }),
-    });
-    const fromGPT = readQuestionsFromStartPayload(parsed);
-    if (fromGPT) {
-      interviewQuestions = fromGPT;
+  const gemini = await callGeminiJson<unknown>({
+    routeTag: "api/placement:start",
+    systemPrompt: buildPlacementSystemPrompt({
+      mode: "start",
+      uiLanguage: body.uiLanguage,
+      targetLanguage: body.targetLanguage,
+    }),
+    userPrompt: buildPlacementUserPrompt({
+      mode: "start",
+      uiLanguage: body.uiLanguage,
+      targetLanguage: body.targetLanguage,
+    }),
+    maxParseAttempts: 2,
+  });
+
+  const debug: GeminiDebugInfo = gemini.debug;
+
+  if (gemini.ok) {
+    const fromGemini = readQuestionsFromStartPayload(gemini.data);
+    if (fromGemini) {
+      interviewQuestions = fromGemini;
+    } else {
+      fallbackError = "Gemini returned invalid start questions. Using fallback interview questions.";
+      console.warn("[api/placement:start] Using fallback reason=invalid_model_shape");
+    }
+  } else {
+    console.warn(`[api/placement:start] Using fallback reason=${gemini.reason}`);
+    if (gemini.reason !== "missing_key") {
+      fallbackError = `Gemini start call failed (${gemini.reason}). Using fallback interview questions.`;
     }
   }
 
@@ -685,19 +758,27 @@ async function handleStart(raw: unknown): Promise<NextResponse<PlacementStartRes
   session.typeHistoryByCycle = {};
   session.lastSeenAt = Date.now();
 
-  return NextResponse.json({
+  const responseBody: PlacementStartResponse = {
     sessionId: session.sessionId,
     interview: {
       questions: interviewQuestions,
     },
     state: defaultPlacementState(),
-  });
+  };
+
+  return NextResponse.json(
+    withPlacementDebug(responseBody, {
+      diagnostic,
+      debug,
+      error: fallbackError,
+    }),
+    { status: fallbackStatus },
+  );
 }
 
-async function handleStep(raw: unknown): Promise<NextResponse<PlacementStepQuestionResponse | PlacementStepFinalResponse>> {
+async function handleStep(raw: unknown, diagnostic: boolean): Promise<NextResponse> {
   cleanupSessions();
   const body = parseStepRequest(raw);
-  const apiKey = process.env.OPENAI_API_KEY;
   const session = getSession(body.sessionId, body.uiLanguage, body.targetLanguage);
   session.uiLanguage = body.uiLanguage;
   session.targetLanguage = body.targetLanguage;
@@ -708,49 +789,86 @@ async function handleStep(raw: unknown): Promise<NextResponse<PlacementStepQuest
   const state = body.state ? normalizePlacementState(body.state) : defaultPlacementState();
 
   let result: PlacementStepQuestionResponse | PlacementStepFinalResponse | null = null;
+  const fallbackStatus = 200;
+  let fallbackError: string | undefined;
+  let fallbackReason: string | null = null;
 
-  if (apiKey) {
-    const currentTypes = (session.typeHistoryByCycle[state.cycle] ?? []).filter((type) => type !== "essay");
-    const parsed = await callOpenAI({
-      apiKey,
-      systemPrompt: buildPlacementSystemPrompt({
-        mode: "step",
-        uiLanguage: session.uiLanguage,
-        targetLanguage: session.targetLanguage,
-      }),
-      userPrompt: buildPlacementUserPrompt({
-        mode: "step",
-        sessionId: session.sessionId,
-        uiLanguage: session.uiLanguage,
-        targetLanguage: session.targetLanguage,
-        interviewAnswers: session.interviewAnswers,
-        state,
-        last: body.last,
-        historyHints: {
-          nonEssayTypesInCurrentCycle: currentTypes,
-          questionsAnsweredInCurrentCycle: currentTypes.length,
-        },
-      }),
-    });
-    const normalized = normalizeStepResponseOrNull(parsed);
+  const currentTypes = (session.typeHistoryByCycle[state.cycle] ?? []).filter((type) => type !== "essay");
+  const gemini = await callGeminiJson<unknown>({
+    routeTag: "api/placement:step",
+    systemPrompt: buildPlacementSystemPrompt({
+      mode: "step",
+      uiLanguage: session.uiLanguage,
+      targetLanguage: session.targetLanguage,
+    }),
+    userPrompt: buildPlacementUserPrompt({
+      mode: "step",
+      sessionId: session.sessionId,
+      uiLanguage: session.uiLanguage,
+      targetLanguage: session.targetLanguage,
+      interviewAnswers: session.interviewAnswers,
+      state,
+      last: body.last,
+      historyHints: {
+        nonEssayTypesInCurrentCycle: currentTypes,
+        questionsAnsweredInCurrentCycle: currentTypes.length,
+      },
+    }),
+    maxParseAttempts: 2,
+  });
+
+  const debug: GeminiDebugInfo = gemini.debug;
+
+  if (gemini.ok) {
+    const normalized = normalizeStepResponseOrNull(gemini.data);
     if (normalized) {
-      if (!normalized.done) {
-        if (normalized.state.cycle < 1 || normalized.state.cycle > 5) {
-          result = null;
-        } else if (!validateQuestionTypeCoverage({ session, state: normalized.state, question: normalized.question })) {
-          result = null;
-        } else if (normalized.decision.stopExam && normalized.state.cycle < 3) {
-          result = null;
-        } else {
-          result = normalized;
-        }
-      } else {
-        if (normalized.summary.cyclesCompleted < 3) {
-          result = null;
-        } else {
-          result = normalized;
-        }
+      let adjusted = normalized;
+      if (!adjusted.done && !body.last) {
+        adjusted = {
+          ...adjusted,
+          state: {
+            ...adjusted.state,
+            questionIndex: 1,
+          },
+          grading: {
+            ...adjusted.grading,
+            wasCorrect: true,
+            scoreDelta: 0,
+            notes: "Initial step generated.",
+          },
+        };
       }
+
+      if (!adjusted.done) {
+        if (adjusted.state.cycle < 1 || adjusted.state.cycle > 5) {
+          fallbackReason = "invalid_cycle";
+        } else if (!validateQuestionTypeCoverage({ session, state: adjusted.state, question: adjusted.question })) {
+          fallbackReason = "question_type_coverage";
+        } else if (adjusted.decision.stopExam && adjusted.state.cycle < 3) {
+          fallbackReason = "early_stop_rejected";
+        } else {
+          result = adjusted;
+        }
+      } else if (adjusted.summary.cyclesCompleted < 3) {
+        fallbackReason = "cycles_completed_too_low";
+      } else {
+        result = adjusted;
+      }
+    } else {
+      fallbackReason = "invalid_model_shape";
+      console.error(
+        `[api/placement:step] Invalid model payload raw="${JSON.stringify(gemini.data).slice(0, 2000)}"`,
+      );
+    }
+    if (fallbackReason) {
+      fallbackError = `Gemini step output was invalid (${fallbackReason}). Using fallback step logic.`;
+      console.warn(`[api/placement:step] Using fallback reason=${fallbackReason}`);
+    }
+  } else {
+    fallbackReason = gemini.reason;
+    console.warn(`[api/placement:step] Using fallback reason=${gemini.reason}`);
+    if (gemini.reason !== "missing_key") {
+      fallbackError = `Gemini step call failed (${gemini.reason}). Using fallback step logic.`;
     }
   }
 
@@ -765,18 +883,34 @@ async function handleStep(raw: unknown): Promise<NextResponse<PlacementStepQuest
   if (!result.done) {
     const cycle = result.state.cycle;
     session.typeHistoryByCycle[cycle] = [...(session.typeHistoryByCycle[cycle] ?? []), result.question.type].slice(-6);
-    return NextResponse.json(result);
+    return NextResponse.json(
+      withPlacementDebug(result, {
+        diagnostic,
+        debug,
+        error: fallbackError,
+      }),
+      { status: fallbackStatus },
+    );
   }
 
   sessions.delete(session.sessionId);
-  return NextResponse.json(result);
+  return NextResponse.json(
+    withPlacementDebug(result, {
+      diagnostic,
+      debug,
+      error: fallbackError,
+    }),
+    { status: fallbackStatus },
+  );
 }
 
 export async function POST(request: Request) {
+  const diagnostic = isDiagnosticRequest(request);
   let payload: unknown;
   try {
     payload = await request.json();
   } catch {
+    console.warn("[api/placement] Received invalid request JSON; defaulting to start payload.");
     payload = { action: "start", uiLanguage: "en", targetLanguage: "English" };
   }
 
@@ -786,7 +920,7 @@ export async function POST(request: Request) {
       : "start";
 
   if (action === "step") {
-    return handleStep(payload);
+    return handleStep(payload, diagnostic);
   }
-  return handleStart(payload);
+  return handleStart(payload, diagnostic);
 }

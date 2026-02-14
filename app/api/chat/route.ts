@@ -6,11 +6,14 @@ import {
   type TargetLanguage,
   type UILanguage,
 } from "@/lib/chatPrompt";
+import {
+  callGeminiJson,
+  defaultGeminiDebugInfo,
+  isDiagnosticRequest,
+  type GeminiDebugInfo,
+} from "@/lib/geminiClient";
 import { getScenarioPersona, type SupportedScenario } from "@/lib/scenarios";
 import { validateResponseShape, type ChatResponseShape } from "@/lib/validate";
-
-const API_URL = "https://api.openai.com/v1/chat/completions";
-const MODEL = "gpt-4o-mini";
 
 type ChatInput = {
   uiLanguage: UILanguage;
@@ -196,69 +199,98 @@ function normalizeResponse(response: ChatResponseShape): ChatResponseShape {
   };
 }
 
+function withChatDebug(
+  body: ChatResponseShape,
+  {
+    diagnostic,
+    debug,
+    error,
+  }: {
+    diagnostic: boolean;
+    debug?: GeminiDebugInfo;
+    error?: string;
+  },
+): ChatResponseShape & { debug?: GeminiDebugInfo; error?: string } {
+  if (!diagnostic && !error) {
+    return body;
+  }
+  return {
+    ...body,
+    ...(error ? { error } : {}),
+    ...(diagnostic ? { debug: debug ?? defaultGeminiDebugInfo() } : {}),
+  };
+}
+
 export async function POST(request: Request) {
+  const diagnostic = isDiagnosticRequest(request);
   let payload: unknown;
 
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json(buildMockResponse(DEFAULT_INPUT));
+    console.warn("[api/chat] Using fallback reason=invalid_request_json");
+    return NextResponse.json(
+      withChatDebug(buildMockResponse(DEFAULT_INPUT), {
+        diagnostic,
+      }),
+    );
   }
 
   const input = parseChatInput(payload);
   const fallback = buildMockResponse(input);
-  const apiKey = process.env.OPENAI_API_KEY;
+  const systemPrompt = buildSystemPrompt({
+    uiLanguage: input.uiLanguage,
+    targetLanguage: input.targetLanguage,
+    level: input.level,
+    scenario: input.scenario,
+  });
+  const conversation =
+    input.messages.length > 0
+      ? input.messages.map((message) => `${message.role === "assistant" ? "Assistant" : "User"}: ${message.content}`).join("\n")
+      : "User: Begin the role-play with your opening line.";
+  const schemaInstruction =
+    'Return only valid JSON with exactly this schema: {"ai_reply":"string","feedback":{"corrected_version":"string","key_mistakes":["string","string","string"],"natural_alternatives":["string","string"],"grammar_note":"string"},"score":0}.';
 
-  if (!apiKey) {
-    return NextResponse.json(fallback);
-  }
+  const gemini = await callGeminiJson<unknown>({
+    routeTag: "api/chat",
+    systemPrompt,
+    userPrompt: `${conversation}\n\n${schemaInstruction}`,
+    maxParseAttempts: 2,
+  });
 
-  try {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.4,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: buildSystemPrompt({
-              uiLanguage: input.uiLanguage,
-              targetLanguage: input.targetLanguage,
-              level: input.level,
-              scenario: input.scenario,
-            }),
-          },
-          ...input.messages,
-        ],
+  if (!gemini.ok) {
+    const status = gemini.reason === "missing_key" ? 200 : 500;
+    const error =
+      gemini.reason === "missing_key"
+        ? "Gemini key missing. Using fallback response."
+        : `Gemini request failed (${gemini.reason}). Using fallback response.`;
+    console.warn(`[api/chat] Using fallback reason=${gemini.reason}`);
+    return NextResponse.json(
+      withChatDebug(fallback, {
+        diagnostic,
+        debug: gemini.debug,
+        error: status === 500 ? error : undefined,
       }),
-    });
-
-    if (!response.ok) {
-      return NextResponse.json(fallback);
-    }
-
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-    const content = data.choices?.[0]?.message?.content;
-
-    if (!content) {
-      return NextResponse.json(fallback);
-    }
-
-    const parsed = JSON.parse(content) as unknown;
-    if (!validateResponseShape(parsed)) {
-      return NextResponse.json(fallback);
-    }
-
-    return NextResponse.json(normalizeResponse(parsed));
-  } catch {
-    return NextResponse.json(fallback);
+      { status },
+    );
   }
+
+  if (!validateResponseShape(gemini.data)) {
+    console.warn("[api/chat] Using fallback reason=invalid_model_shape");
+    return NextResponse.json(
+      withChatDebug(fallback, {
+        diagnostic,
+        debug: gemini.debug,
+        error: "Gemini response shape was invalid. Using fallback response.",
+      }),
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json(
+    withChatDebug(normalizeResponse(gemini.data), {
+      diagnostic,
+      debug: gemini.debug,
+    }),
+  );
 }

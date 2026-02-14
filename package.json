@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "diagnose:gemini": "node scripts/diagnose-gemini.mjs"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",

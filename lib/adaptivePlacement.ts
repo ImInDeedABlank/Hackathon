@@ -261,51 +261,70 @@ export function validatePlacementMetrics(raw: unknown): raw is PlacementMetrics 
 
 export function validatePlacementStepResponse(
   raw: unknown,
+  issues?: string[],
 ): raw is PlacementStepQuestionResponse | PlacementStepFinalResponse {
-  if (!raw || typeof raw !== "object") {
+  const fail = (message: string) => {
+    if (issues) {
+      issues.push(message);
+    }
     return false;
+  };
+
+  if (!raw || typeof raw !== "object") {
+    return fail("root must be an object");
   }
 
   const source = raw as Record<string, unknown>;
   if (typeof source.done !== "boolean" || !source.decision || typeof source.decision !== "object") {
-    return false;
+    return fail("done must be boolean and decision must be an object");
   }
   const decision = source.decision as Record<string, unknown>;
-  if (typeof decision.reason !== "string" || typeof decision.stopExam !== "boolean") {
-    return false;
+  if (typeof decision.stopExam !== "boolean") {
+    return fail("decision.stopExam must be boolean");
+  }
+  if (typeof decision.reason !== "string") {
+    return fail("decision.reason must be a string");
   }
 
   const state = normalizePlacementState(source.state);
   const hasState = !!source.state && typeof source.state === "object";
   if (!hasState || !state) {
-    return false;
+    return fail("state must be an object");
   }
 
   if (source.done) {
     const summary = source.summary as Record<string, unknown> | undefined;
     if (!validatePlacementMetrics(source.placement) || !Array.isArray(source.focus_areas) || !summary) {
-      return false;
+      return fail("final response must include valid placement, focus_areas array, and summary object");
     }
     const focus = source.focus_areas;
     const summaryScores = summary.skillScores;
-    return (
+    const valid =
       focus.length >= 3 &&
       focus.slice(0, 3).every((item) => typeof item === "string") &&
       typeof summary.cyclesCompleted === "number" &&
       summaryScores !== null &&
-      typeof summaryScores === "object"
-    );
+      typeof summaryScores === "object";
+    return valid || fail("final response has invalid focus_areas or summary fields");
   }
 
   const grading = source.grading as Record<string, unknown> | undefined;
   if (!grading || typeof grading !== "object") {
-    return false;
+    return fail("grading must be an object");
   }
 
-  return (
-    typeof grading.wasCorrect === "boolean" &&
-    typeof grading.scoreDelta === "number" &&
-    typeof grading.notes === "string" &&
-    validateAdaptiveQuestion(source.question)
-  );
+  if (typeof grading.wasCorrect !== "boolean") {
+    return fail("grading.wasCorrect must be boolean");
+  }
+  if (typeof grading.scoreDelta !== "number") {
+    return fail("grading.scoreDelta must be number");
+  }
+  if (typeof grading.notes !== "string") {
+    return fail("grading.notes must be string");
+  }
+  if (!validateAdaptiveQuestion(source.question)) {
+    return fail("question is invalid for adaptive schema");
+  }
+
+  return true;
 }
