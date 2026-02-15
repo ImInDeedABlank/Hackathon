@@ -1,26 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+
+import { readPlacementResult } from "@/lib/placementStorage";
 
 type SideNavItem = {
   href: string;
   label: string;
   icon: "quiz" | "videos";
+  requiresPlacement?: boolean;
 };
 
 const SIDE_ITEMS: SideNavItem[] = [
   { href: "/vocab-quiz", label: "Vocab Quiz", icon: "quiz" },
-  { href: "/learning-videos", label: "Learning Videos", icon: "videos" },
+  { href: "/learning-videos", label: "Learning Videos", icon: "videos", requiresPlacement: true },
 ];
 
-function SideLink({ href, label, icon, active }: SideNavItem & { active: boolean }) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={`app-bottom-nav-link ${active ? "app-bottom-nav-link-active" : ""}`}
-    >
+function SideLink({ href, label, icon, active, locked }: SideNavItem & { active: boolean; locked?: boolean }) {
+  const baseContent = (
+    <>
       <span aria-hidden="true" className="inline-flex h-5 w-5 items-center justify-center text-slate-700">
         {icon === "quiz" ? (
           <svg viewBox="0 0 20 20" fill="none" className="h-[18px] w-[18px]">
@@ -35,13 +35,58 @@ function SideLink({ href, label, icon, active }: SideNavItem & { active: boolean
           </svg>
         )}
       </span>
-      <span className="text-[11px] font-semibold tracking-[0.08em] text-slate-900 sm:text-xs">{label}</span>
+      <span className="text-[11px] font-semibold tracking-[0.08em] text-slate-900 sm:text-xs">
+        {label}
+      </span>
+      {locked ? (
+        <span aria-hidden="true" className="text-[10px] font-semibold text-slate-500">
+          Locked
+        </span>
+      ) : null}
+    </>
+  );
+
+  if (locked) {
+    return (
+      <span
+        aria-disabled="true"
+        className={`app-bottom-nav-link app-bottom-nav-link-locked ${active ? "app-bottom-nav-link-active" : ""}`}
+        title="Complete placement to unlock Learning Videos"
+      >
+        {baseContent}
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={`app-bottom-nav-link ${active ? "app-bottom-nav-link-active" : ""}`}
+    >
+      {baseContent}
     </Link>
   );
 }
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const [placementComplete, setPlacementComplete] = useState(false);
+
+  useEffect(() => {
+    const refreshPlacementStatus = () => {
+      setPlacementComplete(Boolean(readPlacementResult()));
+    };
+
+    refreshPlacementStatus();
+    window.addEventListener("storage", refreshPlacementStatus);
+    window.addEventListener("focus", refreshPlacementStatus);
+
+    return () => {
+      window.removeEventListener("storage", refreshPlacementStatus);
+      window.removeEventListener("focus", refreshPlacementStatus);
+    };
+  }, [pathname]);
 
   return (
     <nav
@@ -50,9 +95,16 @@ export default function BottomNav() {
     >
       <div className="relative w-full max-w-md">
         <div className="app-bottom-nav-shell flex items-center justify-between gap-3 rounded-[1.75rem] px-4 py-3 sm:px-5">
-          <SideLink {...SIDE_ITEMS[0]} active={pathname === SIDE_ITEMS[0].href} />
+          <SideLink
+            {...SIDE_ITEMS[0]}
+            active={pathname === SIDE_ITEMS[0].href}
+          />
           <div className="h-12 w-[4.5rem] shrink-0" aria-hidden="true" />
-          <SideLink {...SIDE_ITEMS[1]} active={pathname === SIDE_ITEMS[1].href} />
+          <SideLink
+            {...SIDE_ITEMS[1]}
+            active={pathname === SIDE_ITEMS[1].href}
+            locked={Boolean(SIDE_ITEMS[1].requiresPlacement && !placementComplete)}
+          />
         </div>
 
         <Link

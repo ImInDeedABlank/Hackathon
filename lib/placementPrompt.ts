@@ -1,10 +1,5 @@
-import type {
-  InterviewAnswer,
-  PlacementState,
-  StepPayloadLast,
-  TargetLanguage,
-  UILanguage,
-} from "@/lib/adaptivePlacement";
+import { MAX_PLACEMENT_CYCLES } from "@/lib/adaptivePlacement";
+import type { InterviewAnswer, PlacementState, StepPayloadLast, TargetLanguage, UILanguage } from "@/lib/adaptivePlacement";
 
 type PromptMode = "start" | "step";
 
@@ -53,7 +48,7 @@ export function buildPlacementSystemPrompt({
     "Core rules:",
     "1) Test questions must be ONLY in target language.",
     "2) Placement feedback fields in final output must be in UI language.",
-    "3) 3 to 5 cycles total; each cycle has 5 non-essay questions plus 1 essay.",
+    `3) ${MAX_PLACEMENT_CYCLES} ${MAX_PLACEMENT_CYCLES === 1 ? "cycle" : "cycles"} total; each cycle has 5 non-essay questions plus 1 essay.`,
     "4) Non-essay question types are mcq/fill/short/reorder; ensure at least 3 different types within each cycle's first 5 questions.",
     "5) Difficulty adapts from performance, confidence and stability should be realistic and bounded 0..100.",
     "6) You decide next question type/content, whether to end cycle, and whether to stop exam early (min after cycle 3).",

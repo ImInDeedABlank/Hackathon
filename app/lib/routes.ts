@@ -48,7 +48,7 @@ export const appRoutes: AppRoute[] = [
   {
     href: "/learning-videos",
     title: "Learning Videos",
-    description: "Placeholder route for upcoming guided video lessons.",
+    description: "Personalized video recommendations based on placement level.",
   },
   {
     href: "/summary",

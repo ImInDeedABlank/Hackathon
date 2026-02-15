@@ -311,6 +311,13 @@ a {
   background: color-mix(in srgb, var(--accent) 16%, var(--surface-strong));
 }
 
+.app-bottom-nav-link-locked {
+  cursor: not-allowed;
+  opacity: 0.62;
+  border-color: color-mix(in srgb, var(--line-border) 85%, transparent);
+  background: color-mix(in srgb, var(--surface-strong) 86%, transparent);
+}
+
 .app-bottom-nav-home {
   position: absolute;
   border: 1px solid color-mix(in srgb, var(--button-border) 90%, transparent);

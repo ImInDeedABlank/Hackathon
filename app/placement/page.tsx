@@ -7,6 +7,7 @@ import { useLanguage } from "@/components/LanguageProvider";
 import ProgressBar from "@/app/components/ProgressBar";
 import {
   defaultPlacementState,
+  MAX_PLACEMENT_CYCLES,
   normalizePlacementState,
   type AdaptiveQuestion,
   type InterviewAnswer,
@@ -235,7 +236,7 @@ export default function PlacementPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="theme-panel-soft rounded-xl p-3">
               <p className="text-xs text-slate-500">{copy.cycle}</p>
-              <p className="text-sm font-semibold text-slate-900">{state.cycle}/5</p>
+              <p className="text-sm font-semibold text-slate-900">{state.cycle}/{MAX_PLACEMENT_CYCLES}</p>
             </div>
             <div className="theme-panel-soft rounded-xl p-3">
               <p className="text-xs text-slate-500">{copy.question}</p>

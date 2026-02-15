@@ -4,6 +4,8 @@ export type Difficulty = 1 | 2 | 3;
 export type QuestionType = "mcq" | "fill" | "short" | "reorder" | "essay";
 export type Skill = "vocab" | "grammar" | "reading" | "writing";
 
+export const MAX_PLACEMENT_CYCLES = 1;
+
 export type SkillScores = {
   vocab: number;
   grammar: number;
@@ -182,7 +184,7 @@ export function normalizeSkillScores(value: unknown): SkillScores {
 export function normalizePlacementState(value: unknown): PlacementState {
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   return {
-    cycle: typeof source.cycle === "number" ? clamp(Math.round(source.cycle), 1, 5) : 1,
+    cycle: typeof source.cycle === "number" ? clamp(Math.round(source.cycle), 1, MAX_PLACEMENT_CYCLES) : 1,
     questionIndex: typeof source.questionIndex === "number" ? clamp(Math.round(source.questionIndex), 1, 6) : 1,
     difficulty: asDifficulty(source.difficulty),
     confidence: typeof source.confidence === "number" ? clamp(Math.round(source.confidence), 0, 100) : 35,

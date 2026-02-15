@@ -8,6 +8,7 @@ import {
   asUILanguage,
   clamp,
   defaultPlacementState,
+  MAX_PLACEMENT_CYCLES,
   normalizePlacementState,
   validateAdaptiveQuestion,
   validatePlacementStepResponse,
@@ -36,6 +37,7 @@ import {
 } from "@/lib/geminiClient";
 import { buildPlacementSystemPrompt, buildPlacementUserPrompt } from "@/lib/placementPrompt";
 const SESSION_TTL_MS = 1000 * 60 * 90;
+const MIN_CYCLES_BEFORE_STOP = MAX_PLACEMENT_CYCLES;
 
 type SessionRecord = {
   sessionId: string;
@@ -53,8 +55,6 @@ const TYPE_PLAN_BY_CYCLE: Record<number, QuestionType[]> = {
   1: ["mcq", "fill", "short", "reorder", "mcq"],
   2: ["fill", "reorder", "mcq", "short", "fill"],
   3: ["short", "mcq", "reorder", "fill", "short"],
-  4: ["reorder", "short", "fill", "mcq", "reorder"],
-  5: ["mcq", "short", "fill", "reorder", "mcq"],
 };
 
 type FallbackQuestionEntry = {
@@ -332,7 +332,7 @@ function fallbackQuestion({
   const type =
     state.questionIndex === 6
       ? "essay"
-      : TYPE_PLAN_BY_CYCLE[clamp(state.cycle, 1, 5)][clamp(state.questionIndex, 1, 5) - 1];
+      : TYPE_PLAN_BY_CYCLE[clamp(state.cycle, 1, MAX_PLACEMENT_CYCLES)][clamp(state.questionIndex, 1, 5) - 1];
   const skill: Skill = type === "mcq" ? "vocab" : type === "fill" || type === "reorder" ? "grammar" : type === "essay" ? "writing" : "reading";
   const entry = fallbackEntry(targetLanguage, type, state.difficulty, state.cycle + state.questionIndex);
   const base: AdaptiveQuestion = {
@@ -451,7 +451,7 @@ function buildFallbackFinal({
     },
     focus_areas: [focus[0], focus[1], focus[2]],
     summary: {
-      cyclesCompleted: clamp(state.cycle, 1, 5),
+      cyclesCompleted: clamp(state.cycle, 1, MAX_PLACEMENT_CYCLES),
       skillScores: state.skillScores,
     },
   };
@@ -496,14 +496,18 @@ function fallbackStep({
     };
 
     if (nextState.questionIndex === 6) {
-      const shouldStopEarly = nextState.cycle >= 3 && nextState.confidence < 40 && nextState.stability < 45;
-      const shouldStopAt4 = nextState.cycle === 4 && (nextState.confidence < 70 || nextState.stability < 65);
-      const shouldStopAt5 = nextState.cycle >= 5;
-      const stopExam = shouldStopEarly || shouldStopAt4 || shouldStopAt5;
+      const shouldStopEarly =
+        nextState.cycle >= MIN_CYCLES_BEFORE_STOP && nextState.confidence < 40 && nextState.stability < 45;
+      const shouldStopAtMax = nextState.cycle >= MAX_PLACEMENT_CYCLES;
+      const stopExam = shouldStopEarly || shouldStopAtMax;
       if (stopExam) {
         return buildFallbackFinal({ state: nextState, session });
       }
-      nextState = { ...nextState, cycle: clamp(nextState.cycle + 1, 1, 5), questionIndex: 1 };
+      nextState = {
+        ...nextState,
+        cycle: clamp(nextState.cycle + 1, 1, MAX_PLACEMENT_CYCLES),
+        questionIndex: 1,
+      };
     } else {
       nextState = { ...nextState, questionIndex: clamp(nextState.questionIndex + 1, 1, 6) };
     }
@@ -537,7 +541,7 @@ function validateQuestionTypeCoverage({
   state: PlacementState;
   question: AdaptiveQuestion;
 }): boolean {
-  const cycle = clamp(state.cycle, 1, 5);
+  const cycle = clamp(state.cycle, 1, MAX_PLACEMENT_CYCLES);
   const currentHistory = session.typeHistoryByCycle[cycle] ?? [];
   const nonEssayHistory = currentHistory.filter((type) => type !== "essay");
   if (state.questionIndex <= 5) {
@@ -661,7 +665,7 @@ function normalizeStepResponseOrNull(raw: unknown): PlacementStepQuestionRespons
       },
       focus_areas: [normalizedRaw.focus_areas[0], normalizedRaw.focus_areas[1], normalizedRaw.focus_areas[2]],
       summary: {
-        cyclesCompleted: clamp(Math.round(normalizedRaw.summary.cyclesCompleted), 0, 5),
+        cyclesCompleted: clamp(Math.round(normalizedRaw.summary.cyclesCompleted), 0, MAX_PLACEMENT_CYCLES),
         skillScores: {
           vocab: clamp(Math.round(normalizedRaw.summary.skillScores.vocab), 0, 100),
           grammar: clamp(Math.round(normalizedRaw.summary.skillScores.grammar), 0, 100),
@@ -840,16 +844,16 @@ async function handleStep(raw: unknown, diagnostic: boolean): Promise<NextRespon
       }
 
       if (!adjusted.done) {
-        if (adjusted.state.cycle < 1 || adjusted.state.cycle > 5) {
+        if (adjusted.state.cycle < 1 || adjusted.state.cycle > MAX_PLACEMENT_CYCLES) {
           fallbackReason = "invalid_cycle";
         } else if (!validateQuestionTypeCoverage({ session, state: adjusted.state, question: adjusted.question })) {
           fallbackReason = "question_type_coverage";
-        } else if (adjusted.decision.stopExam && adjusted.state.cycle < 3) {
+        } else if (adjusted.decision.stopExam && adjusted.state.cycle < MIN_CYCLES_BEFORE_STOP) {
           fallbackReason = "early_stop_rejected";
         } else {
           result = adjusted;
         }
-      } else if (adjusted.summary.cyclesCompleted < 3) {
+      } else if (adjusted.summary.cyclesCompleted < MIN_CYCLES_BEFORE_STOP) {
         fallbackReason = "cycles_completed_too_low";
       } else {
         result = adjusted;
