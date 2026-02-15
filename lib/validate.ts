@@ -1,16 +1,27 @@
+export type ChatFeedbackShape = {
+  user_original: string;
+  corrected_version: string;
+  key_mistakes: string[];
+  natural_alternatives: string[];
+  grammar_note: string;
+  improvement_tip: string;
+};
+
 export type ChatResponseShape = {
   ai_reply: string;
-  feedback: {
-    corrected_version: string;
-    key_mistakes: [string, string, string];
-    natural_alternatives: [string, string];
-    grammar_note: string;
-  };
+  feedback: ChatFeedbackShape;
   score: number;
 };
 
-function isStringTuple(value: unknown, length: number): value is string[] {
-  return Array.isArray(value) && value.length === length && value.every((item) => typeof item === "string");
+export type SessionTurn = {
+  user: string;
+  ai: string;
+  feedback: ChatFeedbackShape;
+  score: number;
+};
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 export function validateResponseShape(obj: unknown): obj is ChatResponseShape {
@@ -31,9 +42,11 @@ export function validateResponseShape(obj: unknown): obj is ChatResponseShape {
     typeof source.ai_reply === "string" &&
     typeof source.score === "number" &&
     Number.isFinite(source.score) &&
+    typeof feedbackSource.user_original === "string" &&
     typeof feedbackSource.corrected_version === "string" &&
     typeof feedbackSource.grammar_note === "string" &&
-    isStringTuple(feedbackSource.key_mistakes, 3) &&
-    isStringTuple(feedbackSource.natural_alternatives, 2)
+    typeof feedbackSource.improvement_tip === "string" &&
+    isStringArray(feedbackSource.key_mistakes) &&
+    isStringArray(feedbackSource.natural_alternatives)
   );
 }

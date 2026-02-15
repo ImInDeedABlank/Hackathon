@@ -1,18 +1,19 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import {
-  buildSystemPrompt,
+  buildChatSystemPrompt,
+  buildChatUserPrompt,
   type LearnerLevel,
   type TargetLanguage,
   type UILanguage,
 } from "@/lib/chatPrompt";
 import {
-  callGeminiJson,
+  callGeminiText,
   defaultGeminiDebugInfo,
   isDiagnosticRequest,
   type GeminiDebugInfo,
 } from "@/lib/geminiClient";
-import { getScenarioPersona, type SupportedScenario } from "@/lib/scenarios";
+import { type SupportedScenario } from "@/lib/scenarios";
 import { validateResponseShape, type ChatResponseShape } from "@/lib/validate";
 
 type ChatInput = {
@@ -34,33 +35,18 @@ const DEFAULT_INPUT: ChatInput = {
   messages: [],
 };
 
-const MOCK_AI_REPLIES: Record<SupportedScenario, Record<TargetLanguage, string>> = {
-  Airport: {
-    English: "Passport and boarding pass, please. What is the purpose of your trip today?",
-    Arabic: "جواز السفر وبطاقة الصعود من فضلك. ما سبب رحلتك اليوم؟",
-    Spanish: "Pasaporte y tarjeta de embarque, por favor. ¿Cuál es el motivo de su viaje hoy?",
+const UI_TEXT = {
+  en: {
+    feedbackUnavailable: "Could not generate feedback.",
   },
-  "Ordering Food": {
-    English: "Welcome. What would you like to order today? We also have a lunch special.",
-    Arabic: "مرحبًا بك. ماذا تود أن تطلب اليوم؟ لدينا أيضًا عرض الغداء.",
-    Spanish: "Bienvenido. ¿Qué le gustaría pedir hoy? También tenemos un especial de almuerzo.",
+  ar: {
+    feedbackUnavailable: "\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0645\u0644\u0627\u062D\u0638\u0627\u062A \u062D\u0627\u0644\u064A\u0627.",
   },
-  "Job Interview": {
-    English: "Thanks for joining us. Could you briefly describe your most relevant experience for this role?",
-    Arabic: "شكرًا لحضورك. هل يمكنك وصف خبرتك الأكثر صلة بهذه الوظيفة باختصار؟",
-    Spanish: "Gracias por venir. ¿Podría describir brevemente su experiencia más relevante para este puesto?",
-  },
-  "Hotel Check-in": {
-    English: "Good evening. May I have your name and reservation number to complete check-in?",
-    Arabic: "مساء الخير. هل يمكنني الحصول على اسمك ورقم الحجز لإتمام تسجيل الدخول؟",
-    Spanish: "Buenas noches. ¿Me puede dar su nombre y número de reserva para completar el registro?",
-  },
-  "Doctor Visit": {
-    English: "Hello, I’m your doctor today. What symptoms are you having, and when did they start?",
-    Arabic: "مرحبًا، أنا طبيبك اليوم. ما الأعراض التي تشعر بها ومتى بدأت؟",
-    Spanish: "Hola, soy su médico hoy. ¿Qué síntomas tiene y cuándo empezaron?",
-  },
-};
+} as const;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 function toUiLanguage(value: unknown): UILanguage {
   return value === "ar" ? "ar" : "en";
@@ -132,71 +118,175 @@ function parseChatInput(raw: unknown): ChatInput {
   };
 }
 
-function buildMockResponse(input: ChatInput): ChatResponseShape {
-  const persona = getScenarioPersona(input.scenario);
-  const scoreByLevel: Record<LearnerLevel, number> = {
-    Beginner: 6,
-    Intermediate: 7,
-    Advanced: 8,
-  };
-
-  if (input.uiLanguage === "ar") {
-    return {
-      ai_reply: MOCK_AI_REPLIES[input.scenario][input.targetLanguage],
-      feedback: {
-        corrected_version: `ردّك واضح. جرّب إضافة تفصيل صغير يناسب دور ${persona.roleName}.`,
-        key_mistakes: [
-          "استخدم ترتيب كلمات أبسط عند الشك.",
-          "راجع تصريف الفعل مع الفاعل في الجملة.",
-          "أضف سؤال متابعة قصيرًا للحفاظ على الحوار.",
-        ],
-        natural_alternatives: [
-          "استخدم عبارة مهذبة أقصر قبل الطلب الأساسي.",
-          "قسّم الجملة الطويلة إلى جملتين أو ثلاث جمل قصيرة.",
-        ],
-        grammar_note: "حافظ على زمن واحد في الجملة نفسها لتبقى الرسالة أوضح.",
-      },
-      score: scoreByLevel[input.level],
-    };
+function buildConversationTranscript(messages: ChatInput["messages"]): string {
+  if (messages.length === 0) {
+    return "User: Begin the role-play with your opening line.";
   }
 
+  return messages
+    .map((message) => `${message.role === "assistant" ? "Assistant" : "User"}: ${message.content}`)
+    .join("\n");
+}
+
+function fallbackAssistantReply(targetLanguage: TargetLanguage): string {
+  if (targetLanguage === "Arabic") {
+    return "\u0634\u0643\u0631\u0627 \u0639\u0644\u0649 \u0631\u0633\u0627\u0644\u062A\u0643. \u0647\u0644 \u064A\u0645\u0643\u0646\u0643 \u0625\u0636\u0627\u0641\u0629 \u062A\u0641\u0635\u064A\u0644 \u0622\u062E\u0631\u061F";
+  }
+  if (targetLanguage === "Spanish") {
+    return "Gracias por tu mensaje. ¿Puedes agregar un detalle más?";
+  }
+  return "Thanks for your message. Could you add one more detail?";
+}
+
+function stripJsonFences(text: string): string {
+  const trimmed = text.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fencedMatch?.[1] ? fencedMatch[1].trim() : trimmed;
+}
+
+function parseJsonText(text: string): unknown | null {
+  const stripped = stripJsonFences(text);
+
+  try {
+    return JSON.parse(stripped) as unknown;
+  } catch {
+    try {
+      const wrapped = stripped.replace(/^"([\s\S]*)"$/, "$1").trim();
+      return JSON.parse(wrapped) as unknown;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function replaceNullDecisionReason(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => replaceNullDecisionReason(item));
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const source = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+
+  for (const [key, entry] of Object.entries(source)) {
+    if (
+      key === "decision" &&
+      entry &&
+      typeof entry === "object" &&
+      (entry as Record<string, unknown>).reason === null
+    ) {
+      const decisionObject = { ...(entry as Record<string, unknown>) };
+      decisionObject.reason = "";
+      result[key] = replaceNullDecisionReason(decisionObject);
+      continue;
+    }
+
+    result[key] = replaceNullDecisionReason(entry);
+  }
+
+  return result;
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function toStringArray(value: unknown, fallbackText: string): string[] {
+  if (!Array.isArray(value)) {
+    return [fallbackText];
+  }
+
+  const normalized = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  return normalized.length > 0 ? normalized : [fallbackText];
+}
+
+function normalizeAiReply(rawReply: string, fallback: string): string {
+  const trimmed = rawReply.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  const nested = parseJsonText(trimmed);
+  if (nested && typeof nested === "object") {
+    const nestedSource = nested as Record<string, unknown>;
+    const candidate = asString(nestedSource.ai_reply) || asString(nestedSource.response);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return stripJsonFences(trimmed) || fallback;
+}
+
+function buildFallbackPayload(
+  input: ChatInput,
+  lastUserMessage: string,
+): ChatResponseShape {
+  const unavailable = UI_TEXT[input.uiLanguage].feedbackUnavailable;
+
   return {
-    ai_reply: MOCK_AI_REPLIES[input.scenario][input.targetLanguage],
+    ai_reply: fallbackAssistantReply(input.targetLanguage),
     feedback: {
-      corrected_version: `Your response is clear. Add one concrete detail that matches the ${persona.roleName} context.`,
-      key_mistakes: [
-        "Keep sentence order simple when unsure.",
-        "Check verb form agreement in each sentence.",
-        "Add one short follow-up question to sustain the dialogue.",
-      ],
-      natural_alternatives: [
-        "Use a short polite opener before the main request.",
-        "Split long ideas into two shorter sentences.",
-      ],
-      grammar_note: "Use one tense consistently in each sentence for clearer meaning.",
+      user_original: lastUserMessage,
+      corrected_version: unavailable,
+      key_mistakes: [unavailable],
+      natural_alternatives: [unavailable],
+      grammar_note: unavailable,
+      improvement_tip: unavailable,
     },
-    score: scoreByLevel[input.level],
+    score: 5,
   };
 }
 
-function normalizeResponse(response: ChatResponseShape): ChatResponseShape {
-  return {
-    ai_reply: response.ai_reply.trim(),
+function normalizeChatResponse({
+  raw,
+  input,
+  lastUserMessage,
+}: {
+  raw: unknown;
+  input: ChatInput;
+  lastUserMessage: string;
+}): ChatResponseShape | null {
+  const cleanedRaw = replaceNullDecisionReason(raw);
+  if (!cleanedRaw || typeof cleanedRaw !== "object") {
+    return null;
+  }
+
+  const source = cleanedRaw as Record<string, unknown>;
+  const feedbackSource =
+    source.feedback && typeof source.feedback === "object"
+      ? (source.feedback as Record<string, unknown>)
+      : {};
+
+  const unavailable = UI_TEXT[input.uiLanguage].feedbackUnavailable;
+
+  const aiReplyCandidate =
+    asString(source.ai_reply) || asString(source.response) || asString(source.reply);
+
+  const normalized: ChatResponseShape = {
+    ai_reply: normalizeAiReply(aiReplyCandidate, fallbackAssistantReply(input.targetLanguage)),
     feedback: {
-      corrected_version: response.feedback.corrected_version.trim(),
-      key_mistakes: [
-        response.feedback.key_mistakes[0].trim(),
-        response.feedback.key_mistakes[1].trim(),
-        response.feedback.key_mistakes[2].trim(),
-      ],
-      natural_alternatives: [
-        response.feedback.natural_alternatives[0].trim(),
-        response.feedback.natural_alternatives[1].trim(),
-      ],
-      grammar_note: response.feedback.grammar_note.trim(),
+      user_original: lastUserMessage,
+      corrected_version: asString(feedbackSource.corrected_version) || unavailable,
+      key_mistakes: toStringArray(feedbackSource.key_mistakes, unavailable),
+      natural_alternatives: toStringArray(feedbackSource.natural_alternatives, unavailable),
+      grammar_note: asString(feedbackSource.grammar_note) || unavailable,
+      improvement_tip: asString(feedbackSource.improvement_tip) || unavailable,
     },
-    score: Math.max(0, Math.min(10, Math.round(response.score))),
+    score:
+      typeof source.score === "number" && Number.isFinite(source.score)
+        ? clamp(Math.round(source.score), 0, 10)
+        : 5,
   };
+
+  return validateResponseShape(normalized) ? normalized : null;
 }
 
 function withChatDebug(
@@ -228,69 +318,100 @@ export async function POST(request: Request) {
   try {
     payload = await request.json();
   } catch {
-    console.warn("[api/chat] Using fallback reason=invalid_request_json");
+    const fallback = buildFallbackPayload(DEFAULT_INPUT, "");
     return NextResponse.json(
-      withChatDebug(buildMockResponse(DEFAULT_INPUT), {
+      withChatDebug(fallback, {
         diagnostic,
+        error: "Invalid request JSON. Returned fallback response.",
       }),
     );
   }
 
   const input = parseChatInput(payload);
-  const fallback = buildMockResponse(input);
-  const systemPrompt = buildSystemPrompt({
+  const lastUserMessage = [...input.messages].reverse().find((m) => m.role === "user")?.content ?? "";
+  const conversation = buildConversationTranscript(input.messages);
+
+  if (!lastUserMessage) {
+    const fallback = buildFallbackPayload(input, "");
+    return NextResponse.json(
+      withChatDebug(fallback, {
+        diagnostic,
+        error: "Missing user message. Returned fallback response.",
+      }),
+    );
+  }
+
+  const systemPrompt = buildChatSystemPrompt({
     uiLanguage: input.uiLanguage,
     targetLanguage: input.targetLanguage,
     level: input.level,
     scenario: input.scenario,
   });
-  const conversation =
-    input.messages.length > 0
-      ? input.messages.map((message) => `${message.role === "assistant" ? "Assistant" : "User"}: ${message.content}`).join("\n")
-      : "User: Begin the role-play with your opening line.";
-  const schemaInstruction =
-    'Return only valid JSON with exactly this schema: {"ai_reply":"string","feedback":{"corrected_version":"string","key_mistakes":["string","string","string"],"natural_alternatives":["string","string"],"grammar_note":"string"},"score":0}.';
 
-  const gemini = await callGeminiJson<unknown>({
-    routeTag: "api/chat",
-    systemPrompt,
-    userPrompt: `${conversation}\n\n${schemaInstruction}`,
-    maxParseAttempts: 2,
+  const baseUserPrompt = buildChatUserPrompt({
+    lastUserMessage,
+    conversation,
+    uiLanguage: input.uiLanguage,
+    targetLanguage: input.targetLanguage,
+    level: input.level,
+    scenario: input.scenario,
   });
 
-  if (!gemini.ok) {
-    const status = gemini.reason === "missing_key" ? 200 : 500;
-    const error =
-      gemini.reason === "missing_key"
-        ? "Gemini key missing. Using fallback response."
-        : `Gemini request failed (${gemini.reason}). Using fallback response.`;
-    console.warn(`[api/chat] Using fallback reason=${gemini.reason}`);
-    return NextResponse.json(
-      withChatDebug(fallback, {
-        diagnostic,
-        debug: gemini.debug,
-        error: status === 500 ? error : undefined,
-      }),
-      { status },
-    );
+  const prompts = [
+    baseUserPrompt,
+    `${baseUserPrompt}\n\nReturn JSON only. Use keys exactly: ai_reply, feedback, score. No key named response.`,
+  ];
+
+  let lastDebug: GeminiDebugInfo | undefined;
+  let lastError = "";
+
+  for (let attempt = 0; attempt < prompts.length; attempt += 1) {
+    const modelResult = await callGeminiText({
+      routeTag: "api/chat",
+      systemPrompt,
+      userPrompt: prompts[attempt],
+      maxOutputTokens: 1024,
+    });
+
+    if (!modelResult.ok) {
+      lastDebug = modelResult.debug;
+      lastError = `Gemini failed (${modelResult.reason}) on attempt ${attempt + 1}.`;
+      continue;
+    }
+
+    lastDebug = modelResult.debug;
+
+    const parsed = parseJsonText(modelResult.text);
+    if (parsed === null) {
+      lastError = `Gemini returned non-JSON text on attempt ${attempt + 1}.`;
+      continue;
+    }
+
+    const normalized = normalizeChatResponse({
+      raw: parsed,
+      input,
+      lastUserMessage,
+    });
+
+    if (normalized) {
+      return NextResponse.json(
+        withChatDebug(normalized, {
+          diagnostic,
+          debug: lastDebug,
+        }),
+      );
+    }
+
+    lastError = `Gemini JSON shape invalid on attempt ${attempt + 1}.`;
   }
 
-  if (!validateResponseShape(gemini.data)) {
-    console.warn("[api/chat] Using fallback reason=invalid_model_shape");
-    return NextResponse.json(
-      withChatDebug(fallback, {
-        diagnostic,
-        debug: gemini.debug,
-        error: "Gemini response shape was invalid. Using fallback response.",
-      }),
-      { status: 500 },
-    );
-  }
-
+  const fallback = buildFallbackPayload(input, lastUserMessage);
   return NextResponse.json(
-    withChatDebug(normalizeResponse(gemini.data), {
+    withChatDebug(fallback, {
       diagnostic,
-      debug: gemini.debug,
+      debug: lastDebug,
+      error: lastError || "Gemini returned invalid payload. Using fallback response.",
     }),
   );
 }
+

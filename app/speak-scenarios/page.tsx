@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -8,7 +8,6 @@ import ScenarioCard from "@/app/components/ScenarioCard";
 import {
   STORAGE_KEYS,
   readPlacementResult,
-  readString,
   writeNumber,
   writeSessionTurns,
   writeString,
@@ -30,37 +29,37 @@ type ScenarioMeta = {
 
 const SCENARIO_META: Record<string, ScenarioMeta> = {
   "buying groceries": {
-    icon: "🛒",
+    icon: "\uD83D\uDED2",
     difficulty: "Beginner",
     description: "Ask for prices, quantities, and common grocery items.",
   },
   "asking for directions": {
-    icon: "🧭",
+    icon: "\uD83E\uDDED",
     difficulty: "Beginner",
     description: "Practice navigation questions and location phrases.",
   },
   airport: {
-    icon: "✈️",
+    icon: "\u2708\uFE0F",
     difficulty: "Intermediate",
     description: "Handle check-in, boarding, and baggage follow-up questions.",
   },
   "ordering food": {
-    icon: "🍽️",
+    icon: "\uD83C\uDF7D\uFE0F",
     difficulty: "Beginner",
     description: "Order meals clearly and ask for menu recommendations.",
   },
   "job interview": {
-    icon: "💼",
+    icon: "\uD83D\uDCBC",
     difficulty: "Advanced",
     description: "Answer professional questions with clear, confident language.",
   },
   "hotel check-in": {
-    icon: "🏨",
+    icon: "\uD83C\uDFE8",
     difficulty: "Intermediate",
     description: "Confirm reservations, dates, and hotel service requests.",
   },
   "doctor visit": {
-    icon: "🩺",
+    icon: "\uD83E\uDE7A",
     difficulty: "Intermediate",
     description: "Describe symptoms and understand treatment instructions.",
   },
@@ -69,18 +68,17 @@ const SCENARIO_META: Record<string, ScenarioMeta> = {
 function getScenarioMeta(scenario: string): ScenarioMeta {
   return (
     SCENARIO_META[scenario.toLowerCase()] ?? {
-      icon: "💬",
+      icon: "\uD83D\uDCAC",
       difficulty: "Mixed",
       description: "Practice practical phrases in a realistic conversation setup.",
     }
   );
 }
 
-export default function ScenariosPage() {
+export default function SpeakScenariosPage() {
   const router = useRouter();
   const { lang, t } = useLanguage();
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
-  const [selectedMode] = useState(() => readString(STORAGE_KEYS.selectedMode, "Text"));
   const [recommendedScenarios] = useState(() => readPlacementResult()?.recommended_scenarios ?? []);
 
   const scenarioOptions = useMemo(() => {
@@ -90,13 +88,13 @@ export default function ScenariosPage() {
 
   const handleSelect = (scenario: string) => {
     setSelectedScenario(scenario);
-    writeString(STORAGE_KEYS.selectedScenario, scenario);
+    writeString(STORAGE_KEYS.selectedMode, "Speak");
+    writeString(STORAGE_KEYS.speakSelectedScenario, scenario);
     writeNumber(STORAGE_KEYS.sessionExchanges, 0);
     writeSessionTurns([]);
     router.push("/chat");
   };
 
-  const modeLabel = selectedMode === "Speak" ? t("speak_mode") : t("text_mode");
   const isRtl = lang === "ar";
 
   return (
@@ -110,7 +108,7 @@ export default function ScenariosPage() {
           Pick one real-life context to start your guided practice session.
         </p>
         <p className="mt-2 text-sm text-slate-600">
-          {t("mode_title")}: <span className="font-semibold text-slate-900">{modeLabel}</span>
+          {t("mode_title")}: <span className="font-semibold text-slate-900">{t("speak_mode")}</span>
         </p>
 
         <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

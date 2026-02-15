@@ -36,6 +36,11 @@ export const appRoutes: AppRoute[] = [
     description: "Pick a scenario to launch the conversation.",
   },
   {
+    href: "/speak-scenarios",
+    title: "Speak Scenarios",
+    description: "Pick a dedicated scenario for Speak mode sessions.",
+  },
+  {
     href: "/chat",
     title: "Chat",
     description: "Main conversational experience.",

@@ -5,6 +5,7 @@ import type { CEFRLevel, LearningVideoItem, TopicRecommendation } from "@/types/
 const YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search";
 const YOUTUBE_WEB_SEARCH_URL = "https://www.youtube.com/results";
 const YOUTUBE_OEMBED_URL = "https://www.youtube.com/oembed";
+const FALLBACK_THUMBNAIL = "/next.svg";
 
 export type VideoQueryIntent = {
   query: string;

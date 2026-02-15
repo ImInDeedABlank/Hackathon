@@ -45,7 +45,7 @@ export default function SpeakModePage() {
   const handleContinue = () => {
     writeString(STORAGE_KEYS.selectedMode, "Speak");
     writeString(STORAGE_KEYS.speakSubMode, selectedSubMode);
-    router.push("/chat");
+    router.push("/speak-scenarios");
   };
 
   return (
@@ -95,7 +95,7 @@ export default function SpeakModePage() {
               onClick={handleContinue}
               className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
             >
-              {t("continue_to_chat")}
+              {t("continue_to_scenarios")}
             </button>
           </div>
         </section>

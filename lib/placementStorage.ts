@@ -1,5 +1,6 @@
 import type { PlacementResult } from "@/lib/placement";
 import type { PlacementSummary } from "@/lib/adaptivePlacement";
+import type { SessionTurn } from "@/lib/validate";
 
 export type PlacementMeta = {
   focus_areas: [string, string, string];
@@ -17,8 +18,38 @@ export const STORAGE_KEYS = {
   selectedMode: "linguasim.selectedMode",
   speakSubMode: "linguasim.speakSubMode",
   selectedScenario: "linguasim.selectedScenario",
+  speakSelectedScenario: "linguasim.speakSelectedScenario",
   sessionExchanges: "linguasim.sessionExchanges",
+  sessionTurns: "linguasim.sessionTurns",
 } as const;
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isSessionTurn(value: unknown): value is SessionTurn {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const source = value as Record<string, unknown>;
+  const feedback = source.feedback;
+  if (!feedback || typeof feedback !== "object") {
+    return false;
+  }
+  const feedbackSource = feedback as Record<string, unknown>;
+  return (
+    typeof source.user === "string" &&
+    typeof source.ai === "string" &&
+    typeof source.score === "number" &&
+    Number.isFinite(source.score) &&
+    typeof feedbackSource.user_original === "string" &&
+    typeof feedbackSource.corrected_version === "string" &&
+    typeof feedbackSource.grammar_note === "string" &&
+    typeof feedbackSource.improvement_tip === "string" &&
+    isStringArray(feedbackSource.key_mistakes) &&
+    isStringArray(feedbackSource.natural_alternatives)
+  );
+}
 
 export function readNumber(key: string, fallback = 0): number {
   if (typeof window === "undefined") {
@@ -48,6 +79,32 @@ export function writeNumber(key: string, value: number): void {
     return;
   }
   window.localStorage.setItem(key, String(value));
+}
+
+export function writeSessionTurns(turns: SessionTurn[]): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(STORAGE_KEYS.sessionTurns, JSON.stringify(turns));
+}
+
+export function readSessionTurns(): SessionTurn[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  const raw = window.localStorage.getItem(STORAGE_KEYS.sessionTurns);
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter((item): item is SessionTurn => isSessionTurn(item));
+  } catch {
+    return [];
+  }
 }
 
 export function writePlacementResult(result: PlacementResult): void {

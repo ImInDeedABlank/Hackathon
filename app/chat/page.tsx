@@ -17,13 +17,15 @@ import {
   STORAGE_KEYS,
   readNumber,
   readPlacementResult,
+  readSessionTurns,
   readString,
   writeNumber,
+  writeSessionTurns,
   writeString,
 } from "@/lib/placementStorage";
-import { validateResponseShape, type ChatResponseShape } from "@/lib/validate";
+import { validateResponseShape, type ChatResponseShape, type SessionTurn } from "@/lib/validate";
 
-type ChatMessage = { id: number; role: "assistant" | "user"; text: string };
+type ChatMessage = { id: number; role: "assistant" | "user"; content: string };
 type UILanguage = "en" | "ar";
 type TargetLanguage = "English" | "Arabic" | "Spanish";
 type LearnerLevel = "Beginner" | "Intermediate" | "Advanced";
@@ -35,7 +37,6 @@ type SupportedScenario =
   | "Doctor Visit";
 type SpeakSubMode = "conversation" | "repeat";
 type RepeatDifficulty = 1 | 2 | 3;
-type TtsEngine = "cloud" | "browser";
 
 type RepeatGenerateResponse = { sentence: string; difficulty: RepeatDifficulty };
 type RepeatEvaluateResponse = {
@@ -61,7 +62,6 @@ const GENERIC_REPEAT_TIPS = [
   "Slow down slightly.",
   "Pause briefly between words.",
 ];
-const TTS_ENGINE_STORAGE_KEY = "linguasim.ttsEngine";
 
 function toUiLanguage(value: string): UILanguage {
   return value === "ar" ? "ar" : "en";
@@ -81,9 +81,6 @@ function toScenario(value: string): SupportedScenario {
 }
 function toSpeakSubMode(value: string): SpeakSubMode {
   return value === "repeat" ? "repeat" : "conversation";
-}
-function toTtsEngine(value: string): TtsEngine {
-  return value === "browser" ? "browser" : "cloud";
 }
 function toRepeatDifficulty(level: LearnerLevel): RepeatDifficulty {
   return level === "Advanced" ? 3 : level === "Intermediate" ? 2 : 1;
@@ -251,73 +248,147 @@ function scoreBadgeClass(score: number): string {
   return "border border-rose-200 bg-rose-100 text-rose-800";
 }
 
-function buildClientFallback(uiLanguage: UILanguage): ChatResponseShape {
+function buildClientFallback(
+  uiLanguage: UILanguage,
+  targetLanguage: TargetLanguage,
+  userOriginal: string,
+): ChatResponseShape {
+  const fallbackAiReply =
+    targetLanguage === "Arabic"
+      ? "شكرا على رسالتك. هل يمكنك إضافة تفصيل آخر؟"
+      : targetLanguage === "Spanish"
+        ? "Gracias por tu mensaje. ¿Puedes agregar un detalle más?"
+        : "Thanks for your message. Could you add one more detail?";
+
   if (uiLanguage === "ar") {
     return {
-      ai_reply: "Let's keep practicing. Try one clearer sentence.",
+      ai_reply: fallbackAiReply,
       feedback: {
-        corrected_version: "Good attempt. Keep sentences short and clear.",
-        key_mistakes: ["Simplify word order.", "Check verb tense.", "Add one short follow-up question."],
-        natural_alternatives: ["Start with a short polite opener.", "Split one long idea into two sentences."],
-        grammar_note: "Use one tense consistently in each sentence.",
+        user_original: userOriginal,
+        corrected_version: "تعذر إنشاء ملاحظات تفصيلية حاليا.",
+        key_mistakes: ["تعذر إنشاء ملاحظات تفصيلية حاليا."],
+        natural_alternatives: ["تعذر إنشاء ملاحظات تفصيلية حاليا."],
+        grammar_note: "تعذر إنشاء ملاحظات تفصيلية حاليا.",
+        improvement_tip: "تعذر إنشاء ملاحظات تفصيلية حاليا.",
       },
-      score: 6,
+      score: 5,
     };
   }
 
   return {
-    ai_reply: "Let's keep practicing. Send your next message in a clearer way.",
+    ai_reply: fallbackAiReply,
     feedback: {
-      corrected_version: "Good attempt. Use one short and clear sentence.",
-      key_mistakes: ["Shorten long sentences.", "Review word order.", "Add one short follow-up question."],
-      natural_alternatives: ["Start with a brief polite opener.", "Split one long idea into two sentences."],
-      grammar_note: "Keep sentence structure simple.",
+      user_original: userOriginal,
+      corrected_version: "Could not generate detailed feedback.",
+      key_mistakes: ["Could not generate detailed feedback."],
+      natural_alternatives: ["Could not generate detailed feedback."],
+      grammar_note: "Could not generate detailed feedback.",
+      improvement_tip: "Could not generate detailed feedback.",
     },
-    score: 6,
+    score: 5,
   };
+}
+
+function buildPendingTurn(user: string): SessionTurn {
+  return {
+    user,
+    ai: "",
+    feedback: {
+      user_original: user,
+      corrected_version: "Waiting for feedback...",
+      key_mistakes: [
+        "Waiting for feedback...",
+        "Waiting for feedback...",
+        "Waiting for feedback...",
+      ],
+      natural_alternatives: ["Waiting for feedback...", "Waiting for feedback..."],
+      grammar_note: "Waiting for feedback...",
+      improvement_tip: "Waiting for feedback...",
+    },
+    score: 0,
+  };
+}
+
+function sanitizeAssistantReply(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const withoutFence = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+  try {
+    const parsed = JSON.parse(withoutFence) as unknown;
+    if (typeof parsed === "string" && parsed.trim().length > 0) {
+      return parsed.trim();
+    }
+    if (parsed && typeof parsed === "object") {
+      const source = parsed as Record<string, unknown>;
+      const aiReply =
+        typeof source.ai_reply === "string"
+          ? source.ai_reply
+          : typeof source.response === "string"
+            ? source.response
+            : typeof source.reply === "string"
+              ? source.reply
+              : "";
+      return aiReply.trim() || withoutFence;
+    }
+  } catch {
+    return withoutFence;
+  }
+
+  return withoutFence;
 }
 
 function toModeLabel(selectedMode: string): "Speak" | "Text" {
   return selectedMode === "Speak" ? "Speak" : "Text";
 }
 
+function scenarioStorageKeyForMode(mode: "Speak" | "Text"): string {
+  return mode === "Speak" ? STORAGE_KEYS.speakSelectedScenario : STORAGE_KEYS.selectedScenario;
+}
+
+function buildOpeningMessage({
+  selectedMode,
+  selectedScenario,
+  speakSubMode,
+}: {
+  selectedMode: "Speak" | "Text";
+  selectedScenario: string;
+  speakSubMode: SpeakSubMode;
+}): ChatMessage {
+  return {
+    id: 1,
+    role: "assistant",
+    content:
+      selectedMode === "Speak"
+        ? `Scenario: ${selectedScenario}. Mode: ${selectedMode} (${speakSubMode === "repeat" ? "Repeat" : "Conversation"}). Send your first message to begin practice.`
+        : `Scenario: ${selectedScenario}. Mode: ${selectedMode}. Send your first message to begin practice.`,
+  };
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const { lang, t } = useLanguage();
 
-  const [selectedMode] = useState(() =>
-    toModeLabel(readString(STORAGE_KEYS.selectedMode, readString("mode", "Text"))),
-  );
-  const [selectedScenario] = useState(() =>
-    readString(STORAGE_KEYS.selectedScenario, readString("scenario", "Ordering Food")),
-  );
-  const [speakSubMode, setSpeakSubMode] = useState<SpeakSubMode>(() =>
-    toSpeakSubMode(
-      readString(STORAGE_KEYS.speakSubMode, readString("speakSubMode", "conversation")),
-    ),
-  );
+  const [selectedMode, setSelectedMode] = useState<"Speak" | "Text">("Text");
+  const [selectedScenario, setSelectedScenario] = useState("Ordering Food");
+  const [speakSubMode, setSpeakSubMode] = useState<SpeakSubMode>("conversation");
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    {
-      id: 1,
-      role: "assistant",
-      text:
-        selectedMode === "Speak"
-          ? `Scenario: ${selectedScenario}. Mode: ${selectedMode} (${speakSubMode === "repeat" ? "Repeat" : "Conversation"}). Send your first message to begin practice.`
-          : `Scenario: ${selectedScenario}. Mode: ${selectedMode}. Send your first message to begin practice.`,
-    },
+    buildOpeningMessage({
+      selectedMode: "Text",
+      selectedScenario: "Ordering Food",
+      speakSubMode: "conversation",
+    }),
   ]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [readRepliesAloud, setReadRepliesAloud] = useState(true);
-  const [ttsEngine, setTtsEngine] = useState<TtsEngine>(() =>
-    toTtsEngine(readString(TTS_ENGINE_STORAGE_KEY, "cloud")),
-  );
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [exchanges, setExchanges] = useState(() => {
-    const saved = readNumber(STORAGE_KEYS.sessionExchanges, 0);
-    return Math.max(0, Math.min(MAX_EXCHANGES, saved));
-  });
-  const [feedback, setFeedback] = useState<ChatResponseShape | null>(null);
+  const [exchanges, setExchanges] = useState(0);
+  const [turns, setTurns] = useState<SessionTurn[]>([]);
+  const [storageHydrated, setStorageHydrated] = useState(false);
 
   const [repeatSentence, setRepeatSentence] = useState("");
   const [repeatDifficulty, setRepeatDifficulty] = useState<RepeatDifficulty>(1);
@@ -327,9 +398,7 @@ export default function ChatPage() {
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const audioObjectUrlRef = useRef<string | null>(null);
 
-  const targetLanguage = toTargetLanguage(
-    readString(STORAGE_KEYS.targetLanguage, readString("targetLanguage", "English")),
-  );
+  const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>("English");
 
   const {
     supported: speechSupported,
@@ -388,6 +457,48 @@ export default function ChatPage() {
       stopAudioPlayback();
     };
   }, [stopAudioPlayback]);
+
+  useEffect(() => {
+    const nextMode = toModeLabel(
+      readString(STORAGE_KEYS.selectedMode, readString("mode", "Text")),
+    );
+    const scenarioKey = scenarioStorageKeyForMode(nextMode);
+    const nextScenario = readString(
+      scenarioKey,
+      readString("scenario", "Ordering Food"),
+    );
+    const nextSpeakSubMode = toSpeakSubMode(
+      readString(STORAGE_KEYS.speakSubMode, readString("speakSubMode", "conversation")),
+    );
+    const nextTargetLanguage = toTargetLanguage(
+      readString(STORAGE_KEYS.targetLanguage, readString("targetLanguage", "English")),
+    );
+    const savedExchanges = readNumber(STORAGE_KEYS.sessionExchanges, 0);
+    const nextExchanges = Math.max(0, Math.min(MAX_EXCHANGES, savedExchanges));
+    const nextTurns = readSessionTurns();
+
+    setSelectedMode(nextMode);
+    setSelectedScenario(nextScenario);
+    setSpeakSubMode(nextSpeakSubMode);
+    setTargetLanguage(nextTargetLanguage);
+    setExchanges(nextExchanges);
+    setTurns(nextTurns);
+    setMessages([
+      buildOpeningMessage({
+        selectedMode: nextMode,
+        selectedScenario: nextScenario,
+        speakSubMode: nextSpeakSubMode,
+      }),
+    ]);
+    setStorageHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!storageHydrated) {
+      return;
+    }
+    writeSessionTurns(turns);
+  }, [turns, storageHydrated]);
 
   useEffect(() => {
     if (!isUsingSpeechInput && isRecording) {
@@ -465,13 +576,6 @@ export default function ChatPage() {
       setRepeatSentence("");
       setRepeatDifficulty(1);
     }
-  };
-
-  const handleTtsEngineChange = (nextValue: string) => {
-    const nextEngine = toTtsEngine(nextValue);
-    setTtsEngine(nextEngine);
-    writeString(TTS_ENGINE_STORAGE_KEY, nextEngine);
-    stopAudioPlayback();
   };
 
   const speakWithBrowserTts = useCallback((text: string, speakLanguage: TargetLanguage): boolean => {
@@ -571,13 +675,6 @@ export default function ChatPage() {
 
       stopAudioPlayback();
 
-      if (ttsEngine === "browser") {
-        if (!speakWithBrowserTts(trimmedText, speakLanguage)) {
-          showToast(t("tts_unavailable"));
-        }
-        return;
-      }
-
       const playedCloudAudio = await speakWithCloudTts(trimmedText, speakLanguage);
       if (playedCloudAudio) {
         return;
@@ -587,7 +684,7 @@ export default function ChatPage() {
         showToast(t("tts_unavailable"));
       }
     },
-    [readRepliesAloud, showToast, speakWithBrowserTts, speakWithCloudTts, stopAudioPlayback, t, ttsEngine],
+    [readRepliesAloud, showToast, speakWithBrowserTts, speakWithCloudTts, stopAudioPlayback, t],
   );
 
   const handleSpeakTextClick = useCallback(
@@ -691,26 +788,6 @@ export default function ChatPage() {
       return;
     }
 
-    const nextExchange = Math.min(MAX_EXCHANGES, exchanges + 1);
-    const userMessage = { role: "user" as const, content: userText };
-    const history = messages
-      .slice(1)
-      .map((message) => ({ role: message.role, content: message.text }))
-      .concat(userMessage);
-
-    setMessages((prev) => {
-      const nextId = prev.length + 1;
-      return [...prev, { id: nextId, role: "user", text: userText }];
-    });
-
-    if (isSpeakConversation) {
-      setSpeechTranscript("");
-    } else {
-      setInput("");
-    }
-
-    setIsSending(true);
-
     const uiLanguage = toUiLanguage(readString(STORAGE_KEYS.uiLanguage, "en"));
     const currentTargetLanguage = toTargetLanguage(
       readString(STORAGE_KEYS.targetLanguage, readString("targetLanguage", "English")),
@@ -719,10 +796,31 @@ export default function ChatPage() {
     const level = toLevel(readString("level", placement?.level ?? "Beginner"));
     const scenario = toScenario(
       readString(
-        STORAGE_KEYS.selectedScenario,
+        scenarioStorageKeyForMode(selectedMode),
         readString("scenario", selectedScenario),
       ),
     );
+
+    const nextExchange = Math.min(MAX_EXCHANGES, exchanges + 1);
+    const userMessage = { role: "user" as const, content: userText };
+    const history = messages
+      .slice(1)
+      .map((message) => ({ role: message.role, content: message.content }))
+      .concat(userMessage);
+
+    setMessages((prev) => {
+      const nextId = prev.length + 1;
+      return [...prev, { id: nextId, role: "user", content: userText }];
+    });
+    setTurns((prev) => [...prev, buildPendingTurn(userText)]);
+
+    if (isSpeakConversation) {
+      setSpeechTranscript("");
+    } else {
+      setInput("");
+    }
+
+    setIsSending(true);
 
     let didCompleteExchange = false;
 
@@ -750,15 +848,40 @@ export default function ChatPage() {
       if (!validateResponseShape(data)) {
         throw new Error("chat_api_shape_error");
       }
+      if (process.env.NODE_ENV === "development") {
+        console.log("[chat] /api/chat keys", Object.keys(data as Record<string, unknown>));
+      }
+      const assistantReply =
+        sanitizeAssistantReply(data.ai_reply) ||
+        buildClientFallback(uiLanguage, currentTargetLanguage, userText).ai_reply;
 
       setMessages((prev) => {
         const nextId = prev.length + 1;
-        return [...prev, { id: nextId, role: "assistant", text: data.ai_reply }];
+        return [...prev, { id: nextId, role: "assistant", content: assistantReply }];
       });
-      setFeedback(data);
+      setTurns((prev) => {
+        if (prev.length === 0) {
+          return [
+            {
+              user: userText,
+              ai: assistantReply,
+              feedback: data.feedback,
+              score: data.score,
+            },
+          ];
+        }
+        const next = [...prev];
+        next[next.length - 1] = {
+          user: next[next.length - 1].user,
+          ai: assistantReply,
+          feedback: data.feedback,
+          score: data.score,
+        };
+        return next;
+      });
 
       if (isSpeakConversation) {
-        void speakTextAloud(data.ai_reply, currentTargetLanguage, {
+        void speakTextAloud(assistantReply, currentTargetLanguage, {
           respectReadRepliesToggle: true,
         });
       }
@@ -768,13 +891,33 @@ export default function ChatPage() {
       if (isSpeakConversation) {
         setMessages((prev) => prev.slice(0, -1));
         setSpeechTranscript(userText);
+        setTurns((prev) => prev.slice(0, -1));
       } else {
-        const fallback = buildClientFallback(uiLanguage);
+        const fallback = buildClientFallback(uiLanguage, currentTargetLanguage, userText);
         setMessages((prev) => {
           const nextId = prev.length + 1;
-          return [...prev, { id: nextId, role: "assistant", text: fallback.ai_reply }];
+          return [...prev, { id: nextId, role: "assistant", content: fallback.ai_reply }];
         });
-        setFeedback(fallback);
+        setTurns((prev) => {
+          if (prev.length === 0) {
+            return [
+              {
+                user: userText,
+                ai: fallback.ai_reply,
+                feedback: fallback.feedback,
+                score: fallback.score,
+              },
+            ];
+          }
+          const next = [...prev];
+          next[next.length - 1] = {
+            user: next[next.length - 1].user,
+            ai: fallback.ai_reply,
+            feedback: fallback.feedback,
+                score: fallback.score,
+              };
+          return next;
+        });
         didCompleteExchange = true;
       }
       showToast("Could not reach AI service.");
@@ -783,6 +926,9 @@ export default function ChatPage() {
       if (didCompleteExchange) {
         setExchanges(nextExchange);
         writeNumber(STORAGE_KEYS.sessionExchanges, nextExchange);
+        if (!isSpeakMode && nextExchange >= MAX_EXCHANGES) {
+          router.push("/summary");
+        }
       }
     }
   };
@@ -790,6 +936,10 @@ export default function ChatPage() {
   const isRtl = lang === "ar";
   const normalizedSpeechError =
     speechError === "Didn't catch that." ? t("didnt_catch_that") : speechError;
+  const latestCompletedTurn =
+    turns.length > 0 && turns[turns.length - 1].ai.trim().length > 0
+      ? turns[turns.length - 1]
+      : null;
 
   return (
     <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
@@ -819,7 +969,7 @@ export default function ChatPage() {
               </button>
             </div>
           ) : null}
-          <ProgressBar current={exchanges} total={MAX_EXCHANGES} label="Session progress" />
+          {!isSpeakMode ? <ProgressBar current={exchanges} total={MAX_EXCHANGES} label="Session progress" /> : null}
         </header>
 
         <section className="theme-panel rounded-2xl p-5 backdrop-blur sm:p-6">
@@ -993,8 +1143,8 @@ export default function ChatPage() {
                   <ChatBubble
                     key={message.id}
                     role={message.role}
-                    text={message.text}
-                    onClick={isSpeakMode ? () => handleSpeakTextClick(message.text) : undefined}
+                    text={message.content}
+                    onClick={isSpeakMode ? () => handleSpeakTextClick(message.content) : undefined}
                     clickLabel={t("read_replies_aloud")}
                   />
                 ))}
@@ -1014,37 +1164,21 @@ export default function ChatPage() {
 
                 {isSpeakConversation ? (
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-col gap-2">
-                      <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={readRepliesAloud}
-                          onChange={(event) => {
-                            const nextValue = event.target.checked;
-                            setReadRepliesAloud(nextValue);
-                            if (!nextValue) {
-                              stopAudioPlayback();
-                            }
-                          }}
-                          className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
-                        />
-                        {t("read_replies_aloud")}
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs font-medium text-slate-600" htmlFor="tts-engine">
-                          {t("tts_engine")}
-                        </label>
-                        <select
-                          id="tts-engine"
-                          value={ttsEngine}
-                          onChange={(event) => handleTtsEngineChange(event.target.value)}
-                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-800 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-                        >
-                          <option value="cloud">{t("tts_engine_cloud")}</option>
-                          <option value="browser">{t("tts_engine_browser")}</option>
-                        </select>
-                      </div>
-                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={readRepliesAloud}
+                        onChange={(event) => {
+                          const nextValue = event.target.checked;
+                          setReadRepliesAloud(nextValue);
+                          if (!nextValue) {
+                            stopAudioPlayback();
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                      />
+                      {t("read_replies_aloud")}
+                    </label>
                     <button
                       type="button"
                       onClick={stopAudioPlayback}
@@ -1117,8 +1251,8 @@ export default function ChatPage() {
           )}
         </section>
 
-        {feedback && !isSpeakRepeat ? (
-          <FeedbackCard feedback={feedback.feedback} score={feedback.score} />
+        {latestCompletedTurn && !isSpeakRepeat ? (
+          <FeedbackCard feedback={latestCompletedTurn.feedback} score={latestCompletedTurn.score} />
         ) : null}
       </div>
       {toastMessage ? (
