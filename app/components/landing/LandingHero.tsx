@@ -40,6 +40,12 @@ export default function LandingHero() {
           >
             {t("view_learning_modes")}
           </Link>
+          <Link
+            href="/language"
+            className="btn-outline inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-semibold transition hover:-translate-y-0.5"
+          >
+            {t("settings")}
+          </Link>
         </div>
         <div className="mt-8 grid gap-3 sm:grid-cols-3">
           {quickStats.map((item, index) => (

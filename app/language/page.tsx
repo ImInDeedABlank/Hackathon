@@ -26,7 +26,7 @@ export default function LanguagePage() {
   const handleContinue = () => {
     writeString(STORAGE_KEYS.uiLanguage, lang);
     writeString(STORAGE_KEYS.targetLanguage, targetLanguage);
-    router.push("/placement");
+    router.push("/main");
   };
 
   const isRtl = isHydrated && lang === "ar";

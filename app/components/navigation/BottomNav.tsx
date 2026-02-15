@@ -56,10 +56,10 @@ export default function BottomNav() {
         </div>
 
         <Link
-          href="/"
+          href="/main"
           aria-label="Home"
-          aria-current={pathname === "/" ? "page" : undefined}
-          className={`app-bottom-nav-home absolute left-1/2 -top-8 z-10 flex h-[4.2rem] w-[4.2rem] -translate-x-1/2 flex-col items-center justify-center rounded-full ${pathname === "/" ? "app-bottom-nav-home-active" : ""}`}
+          aria-current={pathname === "/main" ? "page" : undefined}
+          className={`app-bottom-nav-home absolute left-1/2 -top-8 z-10 flex h-[4.2rem] w-[4.2rem] -translate-x-1/2 flex-col items-center justify-center rounded-full ${pathname === "/main" ? "app-bottom-nav-home-active" : ""}`}
         >
           <span aria-hidden="true" className="inline-flex h-5 w-5 items-center justify-center text-white">
             <svg viewBox="0 0 20 20" fill="none" className="h-[18px] w-[18px]">
