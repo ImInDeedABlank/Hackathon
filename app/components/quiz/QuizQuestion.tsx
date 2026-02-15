@@ -31,6 +31,7 @@ export default function QuizQuestion({
 }: QuizQuestionProps) {
   const { lang } = useLanguage();
   const isRtl = lang === "ar";
+  const questionTextDir = question.languageCode === "ar" ? "rtl" : "ltr";
   const isLastQuestion = questionNumber === totalQuestions;
   const continueLabel = isTransitioning ? "Checking..." : isLastQuestion ? "Finish Quiz" : "Continue";
 
@@ -39,10 +40,16 @@ export default function QuizQuestion({
       <p className="theme-kicker text-xs font-semibold uppercase tracking-[0.14em]">
         Question {questionNumber} of {totalQuestions}
       </p>
-      <h2 className="mt-2 text-xl font-semibold text-slate-900 sm:text-2xl">{question.prompt}</h2>
+      <h2
+        dir={questionTextDir}
+        className={`mt-2 text-xl font-semibold text-slate-900 sm:text-2xl ${questionTextDir === "rtl" ? "text-right" : "text-left"}`}
+      >
+        {question.prompt}
+      </h2>
 
       {feedbackState !== "idle" ? (
         <p
+          dir={questionTextDir}
           className={`mt-4 rounded-xl border px-3 py-2 text-sm ${
             feedbackState === "correct"
               ? "border-emerald-400/70 bg-emerald-500/12 text-slate-900"
@@ -61,6 +68,7 @@ export default function QuizQuestion({
             option={option}
             selected={selectedOptionId === option.id}
             disabled={isTransitioning}
+            textDir={questionTextDir}
             feedbackState={selectedOptionId === option.id ? feedbackState : "idle"}
             onSelect={onSelectOption}
           />

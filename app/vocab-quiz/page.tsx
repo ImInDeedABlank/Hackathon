@@ -8,6 +8,7 @@ import QuizProgress from "@/app/components/quiz/QuizProgress";
 import QuizQuestion from "@/app/components/quiz/QuizQuestion";
 import QuizResults from "@/app/components/quiz/QuizResults";
 import { getQuizPack } from "@/data/quizPacks";
+import { STORAGE_KEYS, readString } from "@/lib/placementStorage";
 import type { QuizLanguageCode } from "@/types/quiz";
 
 const FEEDBACK_DELAY_MS = 520;
@@ -15,9 +16,45 @@ const CELEBRATION_THRESHOLD = 70;
 
 type FeedbackState = "idle" | "correct" | "incorrect";
 
+type QuizPackCopy = {
+  title: string;
+  subtitle: string;
+  packLabel: string;
+};
+
+const QUIZ_PACK_COPY: Record<QuizLanguageCode, QuizPackCopy> = {
+  en: {
+    title: "Vocab Quiz",
+    subtitle: "Build everyday English vocabulary through quick multiple-choice rounds.",
+    packLabel: "English Pack",
+  },
+  ar: {
+    title: "اختبار المفردات",
+    subtitle: "طوّر مفرداتك العربية اليومية عبر جولات سريعة من الأسئلة متعددة الخيارات.",
+    packLabel: "Arabic Pack",
+  },
+  es: {
+    title: "Quiz de Vocabulario",
+    subtitle: "Mejora tu vocabulario cotidiano en español con rondas rápidas de opción múltiple.",
+    packLabel: "Spanish Pack",
+  },
+};
+
+function toQuizLanguageCodeFromTargetLanguage(targetLanguage: string): QuizLanguageCode {
+  if (targetLanguage === "Arabic") {
+    return "ar";
+  }
+  if (targetLanguage === "Spanish") {
+    return "es";
+  }
+  return "en";
+}
+
 export default function VocabQuizPage() {
   const router = useRouter();
-  const [quizLanguageCode] = useState<QuizLanguageCode>("en");
+  const [quizLanguageCode] = useState<QuizLanguageCode>(() =>
+    toQuizLanguageCodeFromTargetLanguage(readString(STORAGE_KEYS.targetLanguage, "English")),
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [score, setScore] = useState(0);
@@ -35,6 +72,7 @@ export default function VocabQuizPage() {
   const scorePercentage = totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
   const canContinue = Boolean(selectedOptionId) && !isTransitioning && !isFinished;
   const canCelebrate = isFinished && scorePercentage >= CELEBRATION_THRESHOLD;
+  const copy = QUIZ_PACK_COPY[quizLanguageCode];
 
   useEffect(() => {
     return () => {
@@ -163,8 +201,9 @@ export default function VocabQuizPage() {
       <div className="theme-top-fade pointer-events-none absolute left-1/2 top-0 h-56 w-[40rem] -translate-x-1/2" />
       <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-5">
         <QuizHeader
-          title="Vocab Quiz"
-          subtitle="Build everyday English vocabulary through quick multiple-choice rounds."
+          title={copy.title}
+          subtitle={copy.subtitle}
+          packLabel={copy.packLabel}
           onBack={handleBack}
         />
 

@@ -5,10 +5,11 @@ import { useLanguage } from "@/components/LanguageProvider";
 type QuizHeaderProps = {
   title: string;
   subtitle?: string;
+  packLabel?: string;
   onBack: () => void;
 };
 
-export default function QuizHeader({ title, subtitle, onBack }: QuizHeaderProps) {
+export default function QuizHeader({ title, subtitle, packLabel = "English Pack", onBack }: QuizHeaderProps) {
   const { lang } = useLanguage();
   const isRtl = lang === "ar";
 
@@ -30,7 +31,7 @@ export default function QuizHeader({ title, subtitle, onBack }: QuizHeaderProps)
           </svg>
           Back
         </button>
-        <p className="theme-kicker text-[11px] font-semibold uppercase tracking-[0.18em]">English Pack</p>
+        <p className="theme-kicker text-[11px] font-semibold uppercase tracking-[0.18em]">{packLabel}</p>
       </div>
       <h1 className="mt-4 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{title}</h1>
       {subtitle ? <p className="mt-2 text-sm text-slate-600 sm:text-base">{subtitle}</p> : null}

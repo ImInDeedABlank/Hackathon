@@ -23,21 +23,6 @@ export default function LandingCards() {
     },
   ];
 
-  const interactionHighlights = [
-    {
-      title: t("highlight_depth_layers_title"),
-      text: t("highlight_depth_layers_text"),
-    },
-    {
-      title: t("highlight_micro_title"),
-      text: t("highlight_micro_text"),
-    },
-    {
-      title: t("highlight_story_title"),
-      text: t("highlight_story_text"),
-    },
-  ];
-
   return (
     <section className={`mx-auto mt-14 w-full max-w-6xl space-y-8 ${isRtl ? "text-right" : "text-left"}`}>
       <div className="grid gap-4 lg:grid-cols-3">
@@ -55,18 +40,6 @@ export default function LandingCards() {
         ))}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        {interactionHighlights.map((item, index) => (
-          <article
-            key={item.title}
-            className="rounded-xl border border-slate-200/80 bg-slate-50/75 p-4 transition duration-300 hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-sm motion-safe:animate-[fade-up_700ms_ease-out_both]"
-            style={{ animationDelay: `${280 + index * 120}ms` }}
-          >
-            <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{item.text}</p>
-          </article>
-        ))}
-      </div>
     </section>
   );
 }

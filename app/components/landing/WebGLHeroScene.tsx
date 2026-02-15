@@ -16,6 +16,32 @@ function createStarField(count: number) {
   return points;
 }
 
+function createLetterLGeometry() {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.9, 1.2);
+  shape.lineTo(-0.32, 1.2);
+  shape.lineTo(-0.32, -0.62);
+  shape.lineTo(0.95, -0.62);
+  shape.lineTo(0.95, -1.2);
+  shape.lineTo(-0.9, -1.2);
+  shape.lineTo(-0.9, 1.2);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.56,
+    steps: 1,
+    bevelEnabled: true,
+    bevelThickness: 0.11,
+    bevelSize: 0.085,
+    bevelOffset: 0,
+    bevelSegments: 7,
+    curveSegments: 24,
+  });
+
+  geometry.center();
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export default function WebGLHeroScene() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fallbackRef = useRef<HTMLDivElement | null>(null);
@@ -67,7 +93,7 @@ export default function WebGLHeroScene() {
     const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 100);
     camera.position.set(0, 0, 4.8);
 
-    const coreGeometry = new THREE.TorusKnotGeometry(1.1, 0.3, 220, 32);
+    const coreGeometry = createLetterLGeometry();
     const coreMaterial = new THREE.MeshStandardMaterial({
       color: "#4f79ff",
       roughness: 0.26,
@@ -76,6 +102,8 @@ export default function WebGLHeroScene() {
       emissiveIntensity: 0.35,
     });
     const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
+    coreMesh.rotation.x = -0.22;
+    coreMesh.rotation.y = 0.36;
 
     const haloGeometry = new THREE.IcosahedronGeometry(1.9, 1);
     const haloMaterial = new THREE.MeshBasicMaterial({
@@ -141,8 +169,8 @@ export default function WebGLHeroScene() {
 
       const elapsed = clock.getElapsedTime();
       if (!prefersReducedMotion) {
-        coreMesh.rotation.x = elapsed * 0.26;
-        coreMesh.rotation.y = elapsed * 0.34;
+        coreMesh.rotation.y = 0.36 + elapsed * 0.34;
+        coreMesh.rotation.x = -0.22 + Math.sin(elapsed * 0.7) * 0.08;
         haloMesh.rotation.x = elapsed * 0.1;
         haloMesh.rotation.y = -elapsed * 0.14;
         stars.rotation.y = elapsed * 0.03;

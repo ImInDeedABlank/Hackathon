@@ -1,4 +1,4 @@
-export type QuizLanguageCode = "en";
+export type QuizLanguageCode = "en" | "ar" | "es";
 
 export type QuizOption = {
   id: string;
