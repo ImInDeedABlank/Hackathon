@@ -21,6 +21,11 @@ export const appRoutes: AppRoute[] = [
     description: "Choose your learning or interaction mode.",
   },
   {
+    href: "/speak-mode",
+    title: "Speak Sub-Mode",
+    description: "Choose Conversation or Repeat before starting Speak chat.",
+  },
+  {
     href: "/scenario-select",
     title: "Scenario Select",
     description: "Legacy route that forwards to scenarios.",

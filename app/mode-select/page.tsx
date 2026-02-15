@@ -39,6 +39,10 @@ export default function ModeSelectPage() {
 
   const handleContinue = () => {
     writeString(STORAGE_KEYS.selectedMode, selectedMode);
+    if (selectedMode === "Speak") {
+      router.push("/speak-mode");
+      return;
+    }
     router.push("/scenarios");
   };
 
@@ -74,7 +78,7 @@ export default function ModeSelectPage() {
               disabled={!selectedMode}
               className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {t("continue_to_scenarios")}
+              {selectedMode === "Speak" ? t("continue") : t("continue_to_scenarios")}
             </button>
           </div>
         </section>

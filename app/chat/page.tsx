@@ -13,6 +13,7 @@ import {
   readPlacementResult,
   readString,
   writeNumber,
+  writeString,
 } from "@/lib/placementStorage";
 import { validateResponseShape, type ChatResponseShape } from "@/lib/validate";
 
@@ -28,6 +29,7 @@ type UILanguage = "en" | "ar";
 type TargetLanguage = "English" | "Arabic" | "Spanish";
 type LearnerLevel = "Beginner" | "Intermediate" | "Advanced";
 type SupportedScenario = "Airport" | "Ordering Food" | "Job Interview" | "Hotel Check-in" | "Doctor Visit";
+type SpeakSubMode = "conversation" | "repeat";
 
 const TARGET_LANGUAGES: TargetLanguage[] = ["English", "Arabic", "Spanish"];
 const LEVELS: LearnerLevel[] = ["Beginner", "Intermediate", "Advanced"];
@@ -55,7 +57,20 @@ function toScenario(value: string): SupportedScenario {
   return SCENARIOS.includes(value as SupportedScenario) ? (value as SupportedScenario) : "Ordering Food";
 }
 
-function buildSpeakModeReply(scenario: string, userText: string, exchangeNumber: number): string {
+function toSpeakSubMode(value: string): SpeakSubMode {
+  return value === "repeat" ? "repeat" : "conversation";
+}
+
+function buildSpeakModeReply(
+  scenario: string,
+  userText: string,
+  exchangeNumber: number,
+  speakSubMode: SpeakSubMode,
+): string {
+  if (speakSubMode === "repeat") {
+    return `Repeat drill ${exchangeNumber}/${MAX_EXCHANGES}: Say this clearly - "Could you please repeat that more slowly?"`;
+  }
+
   const lower = userText.toLowerCase();
 
   if (scenario.toLowerCase().includes("job") && lower.includes("experience")) {
@@ -70,13 +85,43 @@ function buildSpeakModeReply(scenario: string, userText: string, exchangeNumber:
   return `Good attempt for ${scenario}. Keep the sentence clear and add one follow-up question in your next message (turn ${exchangeNumber}/${MAX_EXCHANGES}).`;
 }
 
-function buildSpeakModeResponse(scenario: string, userText: string, exchangeNumber: number): ChatResponseShape {
+function buildSpeakModeResponse(
+  scenario: string,
+  userText: string,
+  exchangeNumber: number,
+  speakSubMode: SpeakSubMode,
+): ChatResponseShape {
   const trimmed = userText.trim();
   const hasQuestion = trimmed.includes("?");
   const hasCapital = /^[A-Z]/.test(trimmed);
+  const hasEnoughWords = trimmed.split(/\s+/).filter(Boolean).length >= 5;
+
+  if (speakSubMode === "repeat") {
+    return {
+      ai_reply: buildSpeakModeReply(scenario, userText, exchangeNumber, speakSubMode),
+      feedback: {
+        corrected_version: hasCapital
+          ? "Clear start. Keep each repeated phrase steady."
+          : "Start with a capital letter before repeating the phrase.",
+        key_mistakes: [
+          "Keep a steady speaking pace.",
+          "Stress key words and pause naturally.",
+          "Repeat the full sentence without dropping words.",
+        ],
+        natural_alternatives: [
+          'Try repeating: "Could you repeat that one more time?"',
+          'Try repeating: "Please say it again, a bit more slowly."',
+        ],
+        grammar_note: hasEnoughWords
+          ? "Your sentence length is good for clarity drills."
+          : "Use at least five words so the drill has enough structure.",
+      },
+      score: hasCapital && hasEnoughWords ? 8 : hasCapital || hasEnoughWords ? 7 : 6,
+    };
+  }
 
   return {
-    ai_reply: buildSpeakModeReply(scenario, userText, exchangeNumber),
+    ai_reply: buildSpeakModeReply(scenario, userText, exchangeNumber, speakSubMode),
     feedback: {
       corrected_version: hasCapital ? "Sentence start is good." : "Capitalize the first letter of your sentence.",
       key_mistakes: [
@@ -144,11 +189,17 @@ export default function ChatPage() {
   const { lang, t } = useLanguage();
   const [selectedMode] = useState(() => readString(STORAGE_KEYS.selectedMode, "Text"));
   const [selectedScenario] = useState(() => readString(STORAGE_KEYS.selectedScenario, "Ordering Food"));
+  const [speakSubMode, setSpeakSubMode] = useState<SpeakSubMode>(() =>
+    toSpeakSubMode(readString(STORAGE_KEYS.speakSubMode, "conversation")),
+  );
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: 1,
       role: "assistant",
-      text: `Scenario: ${selectedScenario}. Mode: ${selectedMode}. Send your first message to begin practice.`,
+      text:
+        selectedMode === "Speak"
+          ? `Scenario: ${selectedScenario}. Mode: ${selectedMode} (${speakSubMode === "repeat" ? "Repeat" : "Conversation"}). Send your first message to begin practice.`
+          : `Scenario: ${selectedScenario}. Mode: ${selectedMode}. Send your first message to begin practice.`,
     },
   ]);
   const [input, setInput] = useState("");
@@ -163,6 +214,11 @@ export default function ChatPage() {
   const isComplete = exchanges >= MAX_EXCHANGES;
   const canSend = input.trim().length > 0 && !isComplete && !isSending;
   const isSpeakMode = selectedMode === "Speak";
+
+  const handleSpeakSubModeChange = (nextMode: SpeakSubMode) => {
+    setSpeakSubMode(nextMode);
+    writeString(STORAGE_KEYS.speakSubMode, nextMode);
+  };
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -185,7 +241,7 @@ export default function ChatPage() {
     setInput("");
 
     if (isSpeakMode) {
-      const speakResult = buildSpeakModeResponse(selectedScenario, userText, nextExchange);
+      const speakResult = buildSpeakModeResponse(selectedScenario, userText, nextExchange, speakSubMode);
       setMessages((prev) => {
         const nextId = prev.length + 1;
         return [...prev, { id: nextId, role: "assistant", text: speakResult.ai_reply }];
@@ -265,6 +321,24 @@ export default function ChatPage() {
           <p className="text-sm text-slate-600">
             {t("mode_title")}: <span className="font-semibold text-slate-900">{isSpeakMode ? t("speak_mode") : t("text_mode")}</span>
           </p>
+          {isSpeakMode ? (
+            <div className="theme-panel-soft inline-flex gap-2 rounded-xl p-1">
+              <button
+                type="button"
+                onClick={() => handleSpeakSubModeChange("conversation")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${speakSubMode === "conversation" ? "btn-glow" : "btn-outline"}`}
+              >
+                {t("chat_tab_conversation")}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSpeakSubModeChange("repeat")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${speakSubMode === "repeat" ? "btn-glow" : "btn-outline"}`}
+              >
+                {t("chat_tab_repeat")}
+              </button>
+            </div>
+          ) : null}
           <ProgressBar current={exchanges} total={MAX_EXCHANGES} label="Session progress" />
         </header>
 
@@ -280,7 +354,11 @@ export default function ChatPage() {
               <button
                 type="button"
                 className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
-                onClick={() => setInput((current) => current || "I need help with my booking details.")}
+                onClick={() =>
+                  setInput((current) =>
+                    current || (speakSubMode === "repeat" ? "Could you please repeat that more slowly?" : "I need help with my booking details."),
+                  )
+                }
                 disabled={isComplete}
               >
                 {t("mic")}

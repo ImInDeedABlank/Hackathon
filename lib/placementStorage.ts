@@ -15,6 +15,7 @@ export const STORAGE_KEYS = {
   placementResult: "linguasim.placementResult",
   placementMeta: "linguasim.placementMeta",
   selectedMode: "linguasim.selectedMode",
+  speakSubMode: "linguasim.speakSubMode",
   selectedScenario: "linguasim.selectedScenario",
   sessionExchanges: "linguasim.sessionExchanges",
 } as const;
