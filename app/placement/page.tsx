@@ -102,6 +102,7 @@ export default function PlacementPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [cooldownMs, setCooldownMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [bootNonce, setBootNonce] = useState(0);
   const bootGuardRef = useRef<string>("");
 
   useEffect(() => {
@@ -115,7 +116,7 @@ export default function PlacementPage() {
   }, [cooldownMs]);
 
   useEffect(() => {
-    const bootKey = `${lang}`;
+    const bootKey = `${lang}-${bootNonce}`;
     if (bootGuardRef.current === bootKey) {
       return;
     }
@@ -169,7 +170,7 @@ export default function PlacementPage() {
     };
 
     void boot();
-  }, [copy.fallbackError, lang]);
+  }, [bootNonce, copy.fallbackError, lang]);
 
   const answeredInterviewCount = useMemo(
     () => interviewAnswers.filter((item) => item.trim().length > 0).length,
@@ -259,6 +260,13 @@ export default function PlacementPage() {
     });
   };
 
+  const handleRetryBoot = () => {
+    if (isBusy) {
+      return;
+    }
+    setBootNonce((prev) => prev + 1);
+  };
+
   const updateCycleAnswer = (index: number, value: string) => {
     setCycleAnswers((prev) => {
       const next = [...prev];
@@ -300,6 +308,22 @@ export default function PlacementPage() {
         {phase === "loading" ? (
           <section className={`theme-panel rounded-2xl p-5 sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
             <p className="text-sm text-slate-700">{copy.loading}</p>
+            {error ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-sm text-red-700">{error}</p>
+                {cooldownMs > 0 ? (
+                  <p className="text-xs text-amber-700">Rate limit cooldown: {Math.ceil(cooldownMs / 1000)}s</p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={handleRetryBoot}
+                  disabled={isBusy || cooldownMs > 0}
+                  className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
           </section>
         ) : null}
 

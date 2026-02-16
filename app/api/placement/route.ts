@@ -31,8 +31,10 @@ import {
   type UILanguage,
 } from "@/lib/adaptivePlacement";
 import {
+  buildGeminiRateLimitPayload,
   callGeminiJson,
   defaultGeminiDebugInfo,
+  isGeminiRateLimitFailure,
   isDiagnosticRequest,
   requestIdFromRequest,
   type GeminiDebugInfo,
@@ -833,6 +835,10 @@ async function handleStart(raw: unknown, diagnostic: boolean, requestId: string)
 
   const debug: GeminiDebugInfo = gemini.debug;
 
+  if (!gemini.ok && isGeminiRateLimitFailure(gemini)) {
+    return NextResponse.json(buildGeminiRateLimitPayload(gemini), { status: 429 });
+  }
+
   if (gemini.ok) {
     const fromGemini = readQuestionsFromStartPayload(gemini.data);
     if (fromGemini) {
@@ -918,6 +924,10 @@ async function handleStep(raw: unknown, diagnostic: boolean, requestId: string):
   });
 
   const debug: GeminiDebugInfo = gemini.debug;
+
+  if (!gemini.ok && isGeminiRateLimitFailure(gemini)) {
+    return NextResponse.json(buildGeminiRateLimitPayload(gemini), { status: 429 });
+  }
 
   if (gemini.ok) {
     const normalized = normalizeStepResponseOrNull(gemini.data);
