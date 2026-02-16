@@ -5,13 +5,11 @@ import { useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/LanguageProvider";
 import ChatBubble from "@/app/components/ChatBubble";
-import FeedbackCard from "@/app/components/FeedbackCard";
 import ProgressBar from "@/app/components/ProgressBar";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import {
   getSpeechRecognitionLang,
   getSpeechSynthesisLang,
-  getSpeechVoicePrefix,
 } from "@/lib/langMap";
 import {
   STORAGE_KEYS,
@@ -23,6 +21,8 @@ import {
   writeSessionTurns,
   writeString,
 } from "@/lib/placementStorage";
+import { ApiFetchError, apiFetch } from "@/src/lib/apiFetch";
+import { isTtsSupported, speak, stop as stopTts } from "@/src/lib/tts";
 import { validateResponseShape, type ChatResponseShape, type SessionTurn } from "@/lib/validate";
 
 type ChatMessage = { id: number; role: "assistant" | "user"; content: string };
@@ -395,8 +395,8 @@ export default function ChatPage() {
   const [isGeneratingRepeatSentence, setIsGeneratingRepeatSentence] = useState(false);
   const [isEvaluatingRepeat, setIsEvaluatingRepeat] = useState(false);
   const [repeatEvaluation, setRepeatEvaluation] = useState<RepeatEvaluateResponse | null>(null);
-  const audioElementRef = useRef<HTMLAudioElement | null>(null);
-  const audioObjectUrlRef = useRef<string | null>(null);
+  const [cooldownMs, setCooldownMs] = useState(0);
+  const didAutoRepeatGenerateRef = useRef(false);
 
   const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>("English");
 
@@ -417,13 +417,14 @@ export default function ChatPage() {
   const isSpeakRepeat = isSpeakMode && speakSubMode === "repeat";
   const isUsingSpeechInput = isSpeakConversation || isSpeakRepeat;
   const activeDraft = isUsingSpeechInput ? speechTranscript : input;
-  const canSend = activeDraft.trim().length > 0 && !isComplete && !isSending;
+  const canSend = activeDraft.trim().length > 0 && !isComplete && !isSending && cooldownMs <= 0;
   const canCheckRepeat =
     isSpeakRepeat &&
     repeatSentence.trim().length > 0 &&
     speechTranscript.trim().length > 0 &&
     !isEvaluatingRepeat &&
-    !isGeneratingRepeatSentence;
+    !isGeneratingRepeatSentence &&
+    cooldownMs <= 0;
   const speechDraftWithInterim =
     speechInterimTranscript.length > 0
       ? `${speechTranscript} ${speechInterimTranscript}`.trim()
@@ -434,22 +435,18 @@ export default function ChatPage() {
     window.setTimeout(() => setToastMessage(null), 3000);
   }, []);
 
+  useEffect(() => {
+    if (cooldownMs <= 0) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setCooldownMs((prev) => Math.max(0, prev - 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownMs]);
+
   const stopAudioPlayback = useCallback(() => {
-    if (audioElementRef.current) {
-      audioElementRef.current.pause();
-      audioElementRef.current.currentTime = 0;
-      audioElementRef.current.src = "";
-      audioElementRef.current = null;
-    }
-
-    if (audioObjectUrlRef.current) {
-      URL.revokeObjectURL(audioObjectUrlRef.current);
-      audioObjectUrlRef.current = null;
-    }
-
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    stopTts();
   }, []);
 
   useEffect(() => {
@@ -526,28 +523,25 @@ export default function ChatPage() {
     };
 
     try {
-      const response = await fetch("/api/repeat", {
+      const response = await apiFetch<unknown>("/api/repeat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        body: {
           action: "generate",
           targetLanguage,
           level,
           scenario: selectedScenario,
-        }),
+        },
       });
-
-      if (!response.ok) {
-        throw new Error("repeat_generate_http_error");
-      }
-
-      const data = (await response.json()) as unknown;
+      const data = response.data;
       const normalized = normalizeRepeatGenerateResponse(data, fallback);
       setRepeatSentence(normalized.sentence);
       setRepeatDifficulty(normalized.difficulty);
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiFetchError && error.isRateLimit) {
+        setCooldownMs(error.cooldownMs ?? 5000);
+        showToast("Rate limit reached. Please wait before requesting another sentence.");
+        return;
+      }
       setRepeatSentence(fallback.sentence);
       setRepeatDifficulty(fallback.difficulty);
       showToast("Could not generate a new sentence.");
@@ -560,6 +554,10 @@ export default function ChatPage() {
     if (!isSpeakRepeat || repeatSentence.trim().length > 0) {
       return;
     }
+    if (didAutoRepeatGenerateRef.current) {
+      return;
+    }
+    didAutoRepeatGenerateRef.current = true;
     void requestRepeatSentence();
   }, [isSpeakRepeat, repeatSentence, requestRepeatSentence]);
 
@@ -573,88 +571,11 @@ export default function ChatPage() {
     setSpeechTranscript("");
     setRepeatEvaluation(null);
     if (nextMode === "repeat") {
+      didAutoRepeatGenerateRef.current = false;
       setRepeatSentence("");
       setRepeatDifficulty(1);
     }
   };
-
-  const speakWithBrowserTts = useCallback((text: string, speakLanguage: TargetLanguage): boolean => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      return false;
-    }
-
-    const trimmedText = text.trim();
-    if (!trimmedText) {
-      return false;
-    }
-
-    try {
-      const synthesis = window.speechSynthesis;
-      const utterance = new SpeechSynthesisUtterance(trimmedText);
-      utterance.lang = getSpeechSynthesisLang(speakLanguage);
-
-      const voicePrefix = getSpeechVoicePrefix(speakLanguage);
-      const matchedVoice = synthesis
-        .getVoices()
-        .find((voice) => voice.lang.toLowerCase().startsWith(voicePrefix));
-      if (matchedVoice) {
-        utterance.voice = matchedVoice;
-      }
-
-      synthesis.speak(utterance);
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  const speakWithCloudTts = useCallback(
-    async (text: string, speakLanguage: TargetLanguage): Promise<boolean> => {
-      try {
-        const response = await fetch("/api/tts", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            text,
-            targetLanguage: speakLanguage,
-            voiceStyle: "friendly",
-          }),
-        });
-
-        if (!response.ok) {
-          return false;
-        }
-
-        const audioBlob = await response.blob();
-        if (audioBlob.size === 0) {
-          return false;
-        }
-
-        const audioUrl = URL.createObjectURL(audioBlob);
-        audioObjectUrlRef.current = audioUrl;
-
-        const audio = new Audio(audioUrl);
-        audioElementRef.current = audio;
-        audio.onended = () => {
-          if (audioObjectUrlRef.current === audioUrl) {
-            URL.revokeObjectURL(audioUrl);
-            audioObjectUrlRef.current = null;
-          }
-          if (audioElementRef.current === audio) {
-            audioElementRef.current = null;
-          }
-        };
-
-        await audio.play();
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [],
-  );
 
   const speakTextAloud = useCallback(
     async (
@@ -674,17 +595,18 @@ export default function ChatPage() {
       }
 
       stopAudioPlayback();
-
-      const playedCloudAudio = await speakWithCloudTts(trimmedText, speakLanguage);
-      if (playedCloudAudio) {
+      if (!isTtsSupported()) {
+        showToast(t("tts_unavailable"));
         return;
       }
 
-      if (!speakWithBrowserTts(trimmedText, speakLanguage)) {
+      try {
+        await speak(trimmedText, getSpeechSynthesisLang(speakLanguage));
+      } catch {
         showToast(t("tts_unavailable"));
       }
     },
-    [readRepliesAloud, showToast, speakWithBrowserTts, speakWithCloudTts, stopAudioPlayback, t],
+    [readRepliesAloud, showToast, stopAudioPlayback, t],
   );
 
   const handleSpeakTextClick = useCallback(
@@ -747,26 +669,23 @@ export default function ChatPage() {
     const fallback = fallbackRepeatEvaluation(repeatSentence, transcript);
 
     try {
-      const response = await fetch("/api/repeat", {
+      const response = await apiFetch<unknown>("/api/repeat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        body: {
           action: "evaluate",
           targetLanguage,
           expectedSentence: repeatSentence,
           transcript,
-        }),
+        },
       });
-
-      if (!response.ok) {
-        throw new Error("repeat_evaluate_http_error");
-      }
-
-      const data = (await response.json()) as unknown;
+      const data = response.data;
       setRepeatEvaluation(normalizeRepeatEvaluateResponse(data, fallback));
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiFetchError && error.isRateLimit) {
+        setCooldownMs(error.cooldownMs ?? 5000);
+        showToast("Rate limit reached. Please wait before checking clarity again.");
+        return;
+      }
       setRepeatEvaluation(fallback);
       showToast("Could not evaluate with AI. Showing basic feedback.");
     } finally {
@@ -825,26 +744,18 @@ export default function ChatPage() {
     let didCompleteExchange = false;
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await apiFetch<unknown>("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        body: {
           uiLanguage,
           targetLanguage: currentTargetLanguage,
           level,
           scenario,
           mode: isSpeakMode ? "Speak" : "Text",
           messages: history,
-        }),
+        },
       });
-
-      if (!response.ok) {
-        throw new Error("chat_api_http_error");
-      }
-
-      const data = (await response.json()) as unknown;
+      const data = response.data;
       if (!validateResponseShape(data)) {
         throw new Error("chat_api_shape_error");
       }
@@ -887,7 +798,20 @@ export default function ChatPage() {
       }
 
       didCompleteExchange = true;
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiFetchError && error.isRateLimit) {
+        setCooldownMs(error.cooldownMs ?? 5000);
+        setMessages((prev) => prev.slice(0, -1));
+        setTurns((prev) => prev.slice(0, -1));
+        if (isSpeakConversation) {
+          setSpeechTranscript(userText);
+        } else {
+          setInput(userText);
+        }
+        showToast("Rate limit reached. Please wait and try again.");
+        return;
+      }
+
       if (isSpeakConversation) {
         setMessages((prev) => prev.slice(0, -1));
         setSpeechTranscript(userText);
@@ -926,7 +850,7 @@ export default function ChatPage() {
       if (didCompleteExchange) {
         setExchanges(nextExchange);
         writeNumber(STORAGE_KEYS.sessionExchanges, nextExchange);
-        if (!isSpeakMode && nextExchange >= MAX_EXCHANGES) {
+        if (nextExchange >= MAX_EXCHANGES) {
           router.push("/summary");
         }
       }
@@ -936,10 +860,6 @@ export default function ChatPage() {
   const isRtl = lang === "ar";
   const normalizedSpeechError =
     speechError === "Didn't catch that." ? t("didnt_catch_that") : speechError;
-  const latestCompletedTurn =
-    turns.length > 0 && turns[turns.length - 1].ai.trim().length > 0
-      ? turns[turns.length - 1]
-      : null;
 
   return (
     <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
@@ -1031,6 +951,11 @@ export default function ChatPage() {
 
               {normalizedSpeechError ? (
                 <p className="text-xs text-amber-700">{normalizedSpeechError}</p>
+              ) : null}
+              {cooldownMs > 0 ? (
+                <p className="text-xs text-amber-700">
+                  Rate limit cooldown: {Math.ceil(cooldownMs / 1000)}s
+                </p>
               ) : null}
 
               <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -1216,6 +1141,11 @@ export default function ChatPage() {
                 {isSpeakConversation && normalizedSpeechError ? (
                   <p className="text-xs text-amber-700">{normalizedSpeechError}</p>
                 ) : null}
+                {cooldownMs > 0 ? (
+                  <p className="text-xs text-amber-700">
+                    Rate limit cooldown: {Math.ceil(cooldownMs / 1000)}s
+                  </p>
+                ) : null}
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                   {isSending ? (
@@ -1223,13 +1153,6 @@ export default function ChatPage() {
                       {t("thinking")}
                     </p>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() => router.push("/summary")}
-                    className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
-                  >
-                    {t("view_summary")}
-                  </button>
                   <button
                     type="button"
                     onClick={() => router.push("/summary")}
@@ -1251,9 +1174,6 @@ export default function ChatPage() {
           )}
         </section>
 
-        {latestCompletedTurn && !isSpeakRepeat ? (
-          <FeedbackCard feedback={latestCompletedTurn.feedback} score={latestCompletedTurn.score} />
-        ) : null}
       </div>
       {toastMessage ? (
         <div className="pointer-events-none fixed bottom-4 left-1/2 z-50 w-[90%] max-w-md -translate-x-1/2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-700 shadow-md">

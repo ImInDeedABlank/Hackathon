@@ -8,9 +8,12 @@ import {
   type UILanguage,
 } from "@/lib/chatPrompt";
 import {
-  callGeminiText,
+  buildGeminiRateLimitPayload,
+  callGeminiJson,
   defaultGeminiDebugInfo,
+  isGeminiRateLimitFailure,
   isDiagnosticRequest,
+  requestIdFromRequest,
   type GeminiDebugInfo,
 } from "@/lib/geminiClient";
 import { type SupportedScenario } from "@/lib/scenarios";
@@ -21,17 +24,20 @@ type ChatInput = {
   targetLanguage: TargetLanguage;
   level: LearnerLevel;
   scenario: SupportedScenario;
+  mode: "Text" | "Speak";
   messages: Array<{ role: "user" | "assistant"; content: string }>;
 };
 
 const TARGET_LANGUAGES = ["English", "Arabic", "Spanish"] as const;
 const LEVELS = ["Beginner", "Intermediate", "Advanced"] as const;
 const SCENARIOS = ["Airport", "Ordering Food", "Job Interview", "Hotel Check-in", "Doctor Visit"] as const;
+const MODES = ["Text", "Speak"] as const;
 const DEFAULT_INPUT: ChatInput = {
   uiLanguage: "en",
   targetLanguage: "English",
   level: "Intermediate",
   scenario: "Ordering Food",
+  mode: "Text",
   messages: [],
 };
 
@@ -71,6 +77,13 @@ function toScenario(value: unknown): SupportedScenario {
     return value as SupportedScenario;
   }
   return DEFAULT_INPUT.scenario;
+}
+
+function toMode(value: unknown): "Text" | "Speak" {
+  if (typeof value === "string" && MODES.includes(value as (typeof MODES)[number])) {
+    return value as "Text" | "Speak";
+  }
+  return DEFAULT_INPUT.mode;
 }
 
 function toMessages(value: unknown): Array<{ role: "user" | "assistant"; content: string }> {
@@ -114,6 +127,7 @@ function parseChatInput(raw: unknown): ChatInput {
     targetLanguage: toTargetLanguage(source.targetLanguage),
     level: toLevel(source.level),
     scenario: toScenario(source.scenario),
+    mode: toMode(source.mode),
     messages: toMessages(source.messages),
   };
 }
@@ -313,6 +327,7 @@ function withChatDebug(
 
 export async function POST(request: Request) {
   const diagnostic = isDiagnosticRequest(request);
+  const requestId = requestIdFromRequest(request);
   let payload: unknown;
 
   try {
@@ -322,6 +337,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       withChatDebug(fallback, {
         diagnostic,
+        debug: defaultGeminiDebugInfo(requestId),
         error: "Invalid request JSON. Returned fallback response.",
       }),
     );
@@ -336,6 +352,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       withChatDebug(fallback, {
         diagnostic,
+        debug: defaultGeminiDebugInfo(requestId),
         error: "Missing user message. Returned fallback response.",
       }),
     );
@@ -357,67 +374,55 @@ export async function POST(request: Request) {
     scenario: input.scenario,
   });
 
-  const prompts = [
-    baseUserPrompt,
-    `${baseUserPrompt}\n\nReturn JSON only. Use keys exactly: ai_reply, feedback, score. No key named response.`,
-  ];
+  const modelResult = await callGeminiJson<unknown>({
+    routeName: "api/chat",
+    requestId,
+    prompt: `System Prompt:\n${systemPrompt}\n\nUser Input:\n${baseUserPrompt}`,
+    schema:
+      '{"ai_reply":"string","feedback":{"user_original":"string","corrected_version":"string","key_mistakes":["string"],"natural_alternatives":["string"],"grammar_note":"string","improvement_tip":"string"},"score":0}',
+    maxOutputTokens: 1024,
+    singleFlightParts: {
+      language: input.targetLanguage,
+      mode: input.mode,
+      stepId: input.messages.length,
+    },
+  });
 
-  let lastDebug: GeminiDebugInfo | undefined;
-  let lastError = "";
-
-  for (let attempt = 0; attempt < prompts.length; attempt += 1) {
-    const modelResult = await callGeminiText({
-      routeTag: "api/chat",
-      systemPrompt,
-      userPrompt: prompts[attempt],
-      maxOutputTokens: 1024,
-    });
-
-    if (!modelResult.ok) {
-      lastDebug = modelResult.debug;
-      lastError = `Gemini failed (${modelResult.reason}) on attempt ${attempt + 1}.`;
-      if (
-        modelResult.reason === "missing_key" ||
-        modelResult.reason === "network_error" ||
-        modelResult.reason === "http_error"
-      ) {
-        break;
-      }
-      continue;
+  if (!modelResult.ok) {
+    if (isGeminiRateLimitFailure(modelResult)) {
+      return NextResponse.json(buildGeminiRateLimitPayload(modelResult), { status: 429 });
     }
+    const fallback = buildFallbackPayload(input, lastUserMessage);
+    return NextResponse.json(
+      withChatDebug(fallback, {
+        diagnostic,
+        debug: modelResult.debug,
+        error: `Gemini failed (${modelResult.reason}). Using fallback response.`,
+      }),
+    );
+  }
 
-    lastDebug = modelResult.debug;
+  const normalized = normalizeChatResponse({
+    raw: modelResult.data,
+    input,
+    lastUserMessage,
+  });
 
-    const parsed = parseJsonText(modelResult.text);
-    if (parsed === null) {
-      lastError = `Gemini returned non-JSON text on attempt ${attempt + 1}.`;
-      continue;
-    }
-
-    const normalized = normalizeChatResponse({
-      raw: parsed,
-      input,
-      lastUserMessage,
-    });
-
-    if (normalized) {
-      return NextResponse.json(
-        withChatDebug(normalized, {
-          diagnostic,
-          debug: lastDebug,
-        }),
-      );
-    }
-
-    lastError = `Gemini JSON shape invalid on attempt ${attempt + 1}.`;
+  if (normalized) {
+    return NextResponse.json(
+      withChatDebug(normalized, {
+        diagnostic,
+        debug: modelResult.debug,
+      }),
+    );
   }
 
   const fallback = buildFallbackPayload(input, lastUserMessage);
   return NextResponse.json(
     withChatDebug(fallback, {
       diagnostic,
-      debug: lastDebug,
-      error: lastError || "Gemini returned invalid payload. Using fallback response.",
+      debug: modelResult.debug,
+      error: "Gemini returned invalid payload. Using fallback response.",
     }),
   );
 }

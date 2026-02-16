@@ -1,4 +1,4 @@
-import { MAX_PLACEMENT_CYCLES } from "@/lib/adaptivePlacement";
+import { MAX_PLACEMENT_CYCLES, QUESTIONS_PER_CYCLE } from "@/lib/adaptivePlacement";
 import type { InterviewAnswer, PlacementState, StepPayloadLast, TargetLanguage, UILanguage } from "@/lib/adaptivePlacement";
 
 type PromptMode = "start" | "step";
@@ -17,10 +17,6 @@ type PlacementUserPromptInput = {
   interviewAnswers?: InterviewAnswer[];
   state?: PlacementState;
   last?: StepPayloadLast;
-  historyHints?: {
-    nonEssayTypesInCurrentCycle: string[];
-    questionsAnsweredInCurrentCycle: number;
-  };
 };
 
 export function buildPlacementSystemPrompt({
@@ -44,53 +40,53 @@ export function buildPlacementSystemPrompt({
   return [
     "You are LinguaSim adaptive placement engine.",
     "Return ONLY valid JSON. No markdown. No extra keys.",
-    "You must evaluate the last learner answer (if present), update adaptive state, decide cycle progression, and generate the next step.",
+    "You must evaluate learner answers by full cycle, update adaptive state, and decide cycle progression.",
     "Core rules:",
     "1) Test questions must be ONLY in target language.",
     "2) Placement feedback fields in final output must be in UI language.",
-    `3) ${MAX_PLACEMENT_CYCLES} ${MAX_PLACEMENT_CYCLES === 1 ? "cycle" : "cycles"} total; each cycle has 5 non-essay questions plus 1 essay.`,
-    "4) Non-essay question types are mcq/fill/short/reorder; ensure at least 3 different types within each cycle's first 5 questions.",
-    "5) Difficulty adapts from performance, confidence and stability should be realistic and bounded 0..100.",
-    "6) You decide next question type/content, whether to end cycle, and whether to stop exam early (min after cycle 3).",
+    `3) Maximum ${MAX_PLACEMENT_CYCLES} cycles total.`,
+    `4) Each cycle must include exactly ${QUESTIONS_PER_CYCLE} questions.`,
+    "5) Allowed question types are only mcq/fill/short/reorder.",
+    "6) Ensure at least 3 different question types in every cycle.",
+    "7) Difficulty adapts from cycle performance, confidence and stability should stay realistic and bounded 0..100.",
+    "8) If LAST_CYCLE is null, generate the first cycle questions for current state.",
+    "9) If LAST_CYCLE is present, evaluate all 5 answers, then either return next cycle questions or final placement.",
+    `10) Gemini may stop early when confident, but never exceed cycle ${MAX_PLACEMENT_CYCLES}.`,
     "Language quality constraints:",
     "- English: natural collocations and everyday contexts.",
     "- Spanish: native phrasing and common daily contexts (not literal translations).",
     "- Arabic: Modern Standard Arabic with natural sentence patterns (not translated templates).",
-    "Essay prompt rule:",
-    "- Essay prompts must explicitly request 1-3 sentences.",
     "Output must match ONE of these two exact schema families:",
-    `A) Next question:
+    `A) Next cycle:
 {
   "done": false,
-  "decision": { "endCycle": boolean, "stopExam": boolean, "reason": string },
+  "decision": { "endCycle": boolean, "stopExam": false, "reason": string },
   "state": {
     "cycle": number,
-    "questionIndex": number,
     "difficulty": 1|2|3,
     "confidence": number,
     "skillScores": { "vocab": number, "grammar": number, "reading": number, "writing": number },
     "stability": number,
     "historySummary": string
   },
-  "grading": { "wasCorrect": boolean, "scoreDelta": number, "notes": string },
-  "question": {
-    "id": string,
-    "type": "mcq"|"fill"|"short"|"reorder"|"essay",
-    "difficulty": 1|2|3,
-    "skill": "vocab"|"grammar"|"reading"|"writing",
-    "prompt": string,
-    "choices"?: string[],
-    "correctAnswer"?: string,
-    "rubric"?: string
-  }
+  "grading": { "cycleAverage": number, "scoreDelta": number, "notes": string },
+  "questions": [{
+      "id": string,
+      "type": "mcq"|"fill"|"short"|"reorder",
+      "difficulty": 1|2|3,
+      "skill": "vocab"|"grammar"|"reading"|"writing",
+      "prompt": string,
+      "choices"?: string[],
+      "correctAnswer"?: string
+    }]
 }`,
+    `In schema A, "questions" must contain exactly ${QUESTIONS_PER_CYCLE} items.`,
     `B) Final result:
 {
   "done": true,
   "decision": { "stopExam": true, "reason": string },
   "state": {
     "cycle": number,
-    "questionIndex": number,
     "difficulty": 1|2|3,
     "confidence": number,
     "skillScores": { "vocab": number, "grammar": number, "reading": number, "writing": number },
@@ -129,7 +125,6 @@ export function buildPlacementUserPrompt({
   interviewAnswers,
   state,
   last,
-  historyHints,
 }: PlacementUserPromptInput): string {
   if (mode === "start") {
     return [
@@ -147,10 +142,10 @@ export function buildPlacementUserPrompt({
     `Target language: ${targetLanguage}`,
     `Interview answers: ${JSON.stringify(interviewAnswers ?? [])}`,
     `Current state: ${JSON.stringify(state ?? null)}`,
-    `Last interaction: ${JSON.stringify(last ?? null)}`,
-    `Cycle hints: ${JSON.stringify(historyHints ?? null)}`,
-    "Evaluate last answer carefully with partial credit when appropriate.",
-    "If there is no last answer, generate the first question for the provided state.",
+    `Last cycle payload: ${JSON.stringify(last ?? null)}`,
+    `Questions per cycle: ${QUESTIONS_PER_CYCLE}`,
+    "Evaluate cycle answers carefully with partial credit when appropriate.",
+    "If last cycle is null, generate the first cycle for the provided state.",
     "Keep prompts short and clear.",
   ].join("\n");
 }

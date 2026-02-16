@@ -1,7 +1,85 @@
 import "server-only";
 
+import crypto from "node:crypto";
+
 export const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
+
+type NormalizedGeminiCallOptions = {
+  routeName: string;
+  requestId: string;
+  model: string;
+  prompt: string;
+  schema?: string;
+  temperature: number;
+  maxOutputTokens: number;
+  singleFlightParts?: Record<string, unknown>;
+};
+
+export type GeminiDebugInfo = {
+  requestId: string;
+  keyPresent: boolean;
+  model: string;
+  url: string;
+  status: number;
+  rawSnippet: string;
+  parseError: string | null;
+  attempt: number;
+  singleFlightKey: string;
+};
+
+export type GeminiFailureReason =
+  | "missing_key"
+  | "network_error"
+  | "http_error"
+  | "response_parse_error"
+  | "empty_text"
+  | "model_parse_error"
+  | "rate_limited"
+  | "service_unavailable";
+
+type GeminiJsonSuccess<T> = {
+  ok: true;
+  data: T;
+  debug: GeminiDebugInfo;
+};
+
+export type GeminiFailure = {
+  ok: false;
+  reason: GeminiFailureReason;
+  error: string;
+  model: string;
+  debug: GeminiDebugInfo;
+  status?: number;
+  cooldownMs?: number;
+};
+
+type LegacyGeminiJsonRequestOptions = {
+  routeTag: string;
+  requestId?: string;
+  model?: string;
+  systemPrompt?: string;
+  userPrompt: string;
+  schema?: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+  singleFlightParts?: Record<string, unknown>;
+};
+
+export type GeminiJsonRequestOptions =
+  | {
+      routeName: string;
+      requestId?: string;
+      model?: string;
+      prompt: string;
+      schema?: string;
+      temperature?: number;
+      maxOutputTokens?: number;
+      singleFlightParts?: Record<string, unknown>;
+    }
+  | LegacyGeminiJsonRequestOptions;
+
+const singleFlight = new Map<string, Promise<GeminiJsonSuccess<unknown> | GeminiFailure>>();
 
 function endpointForModel(model: string): string {
   return `${GEMINI_API_BASE}/${model}:generateContent`;
@@ -11,119 +89,50 @@ function redactedUrlForModel(model: string): string {
   return `${endpointForModel(model)}?key=[REDACTED]`;
 }
 
-export type GeminiDebugInfo = {
-  keyPresent: boolean;
-  url: string;
-  status: number;
-  rawSnippet: string;
-  parseError: string | null;
-};
-
-type GeminiFailureReason =
-  | "missing_key"
-  | "network_error"
-  | "http_error"
-  | "response_parse_error"
-  | "empty_text"
-  | "model_parse_error";
-
-type GeminiTextSuccess = {
-  ok: true;
-  text: string;
-  model: string;
-  debug: GeminiDebugInfo;
-};
-
-type GeminiFailure = {
-  ok: false;
-  reason: GeminiFailureReason;
-  error: string;
-  model: string;
-  debug: GeminiDebugInfo;
-};
-
-type GeminiJsonSuccess<T> = {
-  ok: true;
-  data: T;
-  debug: GeminiDebugInfo;
-};
-
-type GeminiRequestOptions = {
-  routeTag: string;
-  systemPrompt?: string;
-  userPrompt: string;
-  temperature?: number;
-  maxOutputTokens?: number;
-};
-
-type GeminiJsonRequestOptions = GeminiRequestOptions & {
-  maxParseAttempts?: number;
-};
-
-function modelCandidates(): string[] {
-  const configured = process.env.GEMINI_MODEL?.trim();
-  const candidates = [
-    configured,
-    DEFAULT_GEMINI_MODEL,
-    "gemini-2.5-pro",
-    "gemini-pro-latest",
-  ].filter((value): value is string => Boolean(value && value.length > 0));
-
-  return [...new Set(candidates)];
-}
-
-function truncateRaw(value: string): string {
-  return value.length <= 2000 ? value : value.slice(0, 2000);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function computeBackoff(attempt: number): number {
-  const base = 1000;
-  const cap = 30000;
-  const exp = Math.min(cap, base * 2 ** attempt);
-  const jitter = Math.floor(Math.random() * 500);
-  return exp + jitter;
+function parsePositiveInt(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
 }
 
 function parseNonNegativeInt(value: string | undefined): number | null {
   if (!value) {
     return null;
   }
-
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 0) {
     return null;
   }
-
   return parsed;
 }
 
-function max429Retries(): number {
-  return parseNonNegativeInt(process.env.GEMINI_429_RETRIES) ?? 2;
+function maxRetries(): number {
+  return parseNonNegativeInt(process.env.GEMINI_MAX_RETRIES) ?? 3;
 }
 
-function minRequestIntervalMs(): number {
-  return parseNonNegativeInt(process.env.GEMINI_MIN_INTERVAL_MS) ?? 250;
+function concurrencyLimit(): number {
+  const configured = parsePositiveInt(process.env.GEMINI_MAX_CONCURRENCY);
+  if (configured !== null) {
+    return configured;
+  }
+  return process.env.NODE_ENV === "development" ? 2 : 5;
 }
 
-let nextGeminiRequestAt = 0;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-async function waitForGeminiSlot(): Promise<void> {
-  const minInterval = minRequestIntervalMs();
-  if (minInterval <= 0) {
-    return;
-  }
-
-  const now = Date.now();
-  const slot = Math.max(now, nextGeminiRequestAt);
-  nextGeminiRequestAt = slot + minInterval;
-  const waitMs = slot - now;
-  if (waitMs > 0) {
-    await sleep(waitMs);
-  }
+function computeBackoffMs(attemptIndex: number): number {
+  const baseMs = 700;
+  const capMs = 30000;
+  const expMs = Math.min(capMs, baseMs * 2 ** attemptIndex);
+  const jitterMs = Math.floor(Math.random() * Math.max(250, Math.floor(expMs * 0.25)));
+  return expMs + jitterMs;
 }
 
 function parseRetryAfterDelayMs(value: string | null): number | null {
@@ -136,9 +145,9 @@ function parseRetryAfterDelayMs(value: string | null): number | null {
     return null;
   }
 
-  const seconds = Number(trimmed);
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.round(seconds * 1000);
+  const asSeconds = Number(trimmed);
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return Math.round(asSeconds * 1000);
   }
 
   const asDate = Date.parse(trimmed);
@@ -147,6 +156,14 @@ function parseRetryAfterDelayMs(value: string | null): number | null {
   }
 
   return Math.max(0, asDate - Date.now());
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function truncateRaw(value: string): string {
+  return value.length <= 2000 ? value : value.slice(0, 2000);
 }
 
 function parseErrorDetails(rawBody: string): { code: string | null; message: string | null } {
@@ -160,25 +177,6 @@ function parseErrorDetails(rawBody: string): { code: string | null; message: str
   } catch {
     return { code: null, message: null };
   }
-}
-
-function buildPrompt(systemPrompt: string | undefined, userPrompt: string): string {
-  const userText = userPrompt.trim();
-  const systemText = systemPrompt?.trim();
-  if (!systemText) {
-    return userText;
-  }
-  return `System Prompt:\n${systemText}\n\nUser Input:\n${userText}`;
-}
-
-function initialDebug(apiKey: string | undefined, model: string): GeminiDebugInfo {
-  return {
-    keyPresent: Boolean(apiKey),
-    url: redactedUrlForModel(model),
-    status: 0,
-    rawSnippet: "",
-    parseError: null,
-  };
 }
 
 function stripCommonJsonWrappers(text: string): string {
@@ -211,37 +209,217 @@ function parseJsonFromText(text: string): { ok: true; value: unknown } | { ok: f
   return { ok: false, error: lastError ?? "Unknown JSON parse error" };
 }
 
-async function callGeminiTextOnce(
-  options: GeminiRequestOptions,
-  model: string,
-  retryOn429 = false,
-): Promise<GeminiTextSuccess | GeminiFailure> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const debug = initialDebug(apiKey, model);
-  const prompt = buildPrompt(options.systemPrompt, options.userPrompt);
+function extractCandidateText(responsePayload: unknown): string {
+  if (!responsePayload || typeof responsePayload !== "object") {
+    return "";
+  }
 
-  console.info(`[${options.routeTag}] Gemini request keyPresent=${debug.keyPresent} url=${debug.url}`);
+  const candidates = (responsePayload as { candidates?: unknown[] }).candidates;
+  if (!Array.isArray(candidates)) {
+    return "";
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+
+    const parts = (candidate as { content?: { parts?: unknown[] } }).content?.parts;
+    if (!Array.isArray(parts)) {
+      continue;
+    }
+
+    const collected = parts
+      .map((part) => (part && typeof part === "object" ? (part as { text?: unknown }).text : undefined))
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .join("\n");
+
+    if (collected.length > 0) {
+      return collected;
+    }
+  }
+
+  return "";
+}
+
+function normalizeRequestId(requestId: string | undefined): string {
+  const trimmed = requestId?.trim();
+  if (trimmed && trimmed.length > 0) {
+    return trimmed;
+  }
+  return crypto.randomUUID();
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries
+    .map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`)
+    .join(",")}}`;
+}
+
+function hashStable(value: unknown): string {
+  return crypto.createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 20);
+}
+
+function buildPrompt(systemPrompt: string | undefined, userPrompt: string): string {
+  const userText = userPrompt.trim();
+  const systemText = systemPrompt?.trim();
+  if (!systemText) {
+    return userText;
+  }
+  return `System Prompt:\n${systemText}\n\nUser Input:\n${userText}`;
+}
+
+function normalizeOptions(options: GeminiJsonRequestOptions): NormalizedGeminiCallOptions {
+  if ("routeName" in options) {
+    return {
+      routeName: options.routeName,
+      requestId: normalizeRequestId(options.requestId),
+      model: options.model?.trim() || process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL,
+      prompt: options.prompt.trim(),
+      schema: options.schema?.trim() || undefined,
+      temperature: typeof options.temperature === "number" ? options.temperature : 0.7,
+      maxOutputTokens: typeof options.maxOutputTokens === "number" ? options.maxOutputTokens : 1024,
+      singleFlightParts: options.singleFlightParts,
+    };
+  }
+
+  return {
+    routeName: options.routeTag,
+    requestId: normalizeRequestId(options.requestId),
+    model: options.model?.trim() || process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL,
+    prompt: buildPrompt(options.systemPrompt, options.userPrompt),
+    schema: options.schema?.trim() || undefined,
+    temperature: typeof options.temperature === "number" ? options.temperature : 0.7,
+    maxOutputTokens: typeof options.maxOutputTokens === "number" ? options.maxOutputTokens : 1024,
+    singleFlightParts: options.singleFlightParts,
+  };
+}
+
+function buildSingleFlightKey(options: NormalizedGeminiCallOptions): string {
+  const payloadHash = hashStable({
+    routeName: options.routeName,
+    model: options.model,
+    prompt: options.prompt,
+    schema: options.schema ?? null,
+    temperature: options.temperature,
+    maxOutputTokens: options.maxOutputTokens,
+  });
+
+  const contextHash = hashStable(options.singleFlightParts ?? {});
+  return `${options.routeName}:${payloadHash}:${contextHash}`;
+}
+
+function initialDebug(options: {
+  apiKey: string | undefined;
+  model: string;
+  requestId: string;
+  singleFlightKey: string;
+}): GeminiDebugInfo {
+  return {
+    requestId: options.requestId,
+    keyPresent: Boolean(options.apiKey),
+    model: options.model,
+    url: redactedUrlForModel(options.model),
+    status: 0,
+    rawSnippet: "",
+    parseError: null,
+    attempt: 0,
+    singleFlightKey: options.singleFlightKey,
+  };
+}
+
+class Semaphore {
+  private readonly max: number;
+
+  private active = 0;
+
+  private queue: Array<() => void> = [];
+
+  constructor(max: number) {
+    this.max = Math.max(1, max);
+  }
+
+  async acquire(): Promise<() => void> {
+    if (this.active < this.max) {
+      this.active += 1;
+      return () => this.release();
+    }
+
+    await new Promise<void>((resolve) => {
+      this.queue.push(resolve);
+    });
+
+    this.active += 1;
+    return () => this.release();
+  }
+
+  private release(): void {
+    this.active = Math.max(0, this.active - 1);
+    const next = this.queue.shift();
+    if (next) {
+      next();
+    }
+  }
+}
+
+const geminiSemaphore = new Semaphore(concurrencyLimit());
+
+function isTransientStatus(status: number): boolean {
+  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+async function executeGeminiJsonRequest<T>(
+  options: NormalizedGeminiCallOptions,
+  singleFlightKey: string,
+): Promise<GeminiJsonSuccess<T> | GeminiFailure> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const debug = initialDebug({
+    apiKey,
+    model: options.model,
+    requestId: options.requestId,
+    singleFlightKey,
+  });
 
   if (!apiKey) {
     const error = "GEMINI_API_KEY is missing.";
-    console.warn(`[${options.routeTag}] Gemini fallback reason=missing_key message="${error}"`);
+    console.warn(`[${options.routeName}] Gemini fallback requestId=${options.requestId} reason=missing_key message="${error}"`);
     return {
       ok: false,
       reason: "missing_key",
       error,
-      model,
+      model: options.model,
       debug,
     };
   }
 
-  const url = `${endpointForModel(model)}?key=${encodeURIComponent(apiKey)}`;
+  const url = `${endpointForModel(options.model)}?key=${encodeURIComponent(apiKey)}`;
+  const retries = maxRetries();
+  const totalAttempts = retries + 1;
 
-  const maxRetries = retryOn429 ? max429Retries() : 0;
+  const prompt = options.schema
+    ? `${options.prompt}\n\nReturn output that matches this schema exactly:\n${options.schema}`
+    : options.prompt;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+  for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
+    debug.attempt = attempt;
+
+    console.info(
+      `[${options.routeName}] Gemini request requestId=${options.requestId} singleFlightKey=${singleFlightKey} attempt=${attempt}/${totalAttempts} model=${options.model} url=${debug.url}`,
+    );
+
     let response: Response;
     try {
-      await waitForGeminiSlot();
       response = await fetch(url, {
         method: "POST",
         headers: {
@@ -250,8 +428,8 @@ async function callGeminiTextOnce(
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: options.temperature ?? 0.7,
-            maxOutputTokens: options.maxOutputTokens ?? 1024,
+            temperature: options.temperature,
+            maxOutputTokens: options.maxOutputTokens,
             responseMimeType: "application/json",
           },
         }),
@@ -259,232 +437,170 @@ async function callGeminiTextOnce(
     } catch (error) {
       const message = error instanceof Error ? error.message : "Network request failed.";
       debug.parseError = message;
-      console.error(`[${options.routeTag}] Gemini fallback reason=network_error message="${message}"`);
+      const canRetry = attempt < totalAttempts;
+      if (canRetry) {
+        const delayMs = computeBackoffMs(attempt - 1);
+        console.warn(
+          `[${options.routeName}] Gemini transient network error requestId=${options.requestId} attempt=${attempt}/${totalAttempts} delayMs=${delayMs} message="${message}"`,
+        );
+        await sleep(delayMs);
+        continue;
+      }
+
+      console.error(`[${options.routeName}] Gemini fallback requestId=${options.requestId} reason=network_error message="${message}"`);
       return {
         ok: false,
         reason: "network_error",
         error: message,
-        model,
+        model: options.model,
         debug,
       };
     }
 
     debug.status = response.status;
-    console.info(`[${options.routeTag}] Gemini response status=${response.status} statusText=${response.statusText}`);
 
     const rawBody = await response.text();
     debug.rawSnippet = truncateRaw(rawBody);
 
     if (!response.ok) {
       const details = parseErrorDetails(rawBody);
-      const detailSuffix = details.code || details.message ? ` code=${details.code ?? "n/a"} message="${details.message ?? "n/a"}"` : "";
-      console.error(
-        `[${options.routeTag}] Gemini fallback reason=http_error status=${response.status} statusText=${response.statusText}${detailSuffix} raw="${debug.rawSnippet}"`,
-      );
+      const retryAfterMs = parseRetryAfterDelayMs(response.headers.get("retry-after"));
+      const detailSuffix = details.code || details.message
+        ? ` code=${details.code ?? "n/a"} message="${details.message ?? "n/a"}"`
+        : "";
 
-      if (response.status === 429 && attempt < maxRetries) {
-        const retryAfterMs = parseRetryAfterDelayMs(response.headers.get("retry-after"));
-        const delayMs = Math.min(45000, retryAfterMs ?? computeBackoff(attempt));
+      const transient = isTransientStatus(response.status);
+      const canRetry = transient && attempt < totalAttempts;
+      if (canRetry) {
+        const delayMs = clamp(retryAfterMs ?? computeBackoffMs(attempt - 1), 500, 45000);
         console.warn(
-          `[${options.routeTag}] Gemini retrying after 429 attempt=${attempt + 1}/${maxRetries + 1} delayMs=${delayMs} model=${model}`,
+          `[${options.routeName}] Gemini retry requestId=${options.requestId} status=${response.status} attempt=${attempt + 1}/${totalAttempts} delayMs=${delayMs}${detailSuffix}`,
         );
         await sleep(delayMs);
         continue;
+      }
+
+      console.error(
+        `[${options.routeName}] Gemini fallback requestId=${options.requestId} reason=http_error status=${response.status} statusText=${response.statusText}${detailSuffix} raw="${debug.rawSnippet}"`,
+      );
+
+      if (response.status === 429 || response.status === 503) {
+        const cooldownMs = clamp(retryAfterMs ?? computeBackoffMs(attempt - 1), 1000, 45000);
+        return {
+          ok: false,
+          reason: response.status === 429 ? "rate_limited" : "service_unavailable",
+          error: details.message ?? `Gemini HTTP ${response.status} ${response.statusText}`,
+          model: options.model,
+          status: response.status,
+          cooldownMs,
+          debug,
+        };
       }
 
       return {
         ok: false,
         reason: "http_error",
         error: details.message ?? `Gemini HTTP ${response.status} ${response.statusText}`,
-        model,
+        model: options.model,
+        status: response.status,
         debug,
       };
     }
 
-    let data: unknown;
+    let parsedBody: unknown;
     try {
-      data = JSON.parse(rawBody) as unknown;
+      parsedBody = JSON.parse(rawBody) as unknown;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to parse Gemini HTTP body as JSON.";
       debug.parseError = message;
       console.error(
-        `[${options.routeTag}] Gemini fallback reason=response_parse_error status=${response.status} parseError="${message}" raw="${debug.rawSnippet}"`,
+        `[${options.routeName}] Gemini fallback requestId=${options.requestId} reason=response_parse_error parseError="${message}" raw="${debug.rawSnippet}"`,
       );
       return {
         ok: false,
         reason: "response_parse_error",
         error: message,
-        model,
+        model: options.model,
         debug,
       };
     }
 
-    const candidateText = (data as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })?.candidates?.[0]?.content
-      ?.parts?.[0]?.text;
-    const text = typeof candidateText === "string" ? candidateText.trim() : "";
-
-    if (!text) {
+    const candidateText = extractCandidateText(parsedBody);
+    if (!candidateText) {
       console.error(
-        `[${options.routeTag}] Gemini fallback reason=empty_text status=${response.status} raw="${debug.rawSnippet}"`,
+        `[${options.routeName}] Gemini fallback requestId=${options.requestId} reason=empty_text raw="${debug.rawSnippet}"`,
       );
       return {
         ok: false,
         reason: "empty_text",
         error: "Gemini returned an empty candidate text.",
-        model,
+        model: options.model,
+        debug,
+      };
+    }
+
+    const parsed = parseJsonFromText(candidateText);
+    if (!parsed.ok) {
+      debug.parseError = parsed.error;
+      debug.rawSnippet = truncateRaw(candidateText);
+      console.error(
+        `[${options.routeName}] Gemini fallback requestId=${options.requestId} reason=model_parse_error parseError="${parsed.error}" raw="${debug.rawSnippet}"`,
+      );
+      return {
+        ok: false,
+        reason: "model_parse_error",
+        error: parsed.error,
+        model: options.model,
         debug,
       };
     }
 
     return {
       ok: true,
-      text,
-      model,
+      data: parsed.value as T,
       debug,
     };
   }
 
   return {
     ok: false,
-    reason: "http_error",
-    error: "Gemini HTTP 429 Too Many Requests",
-    model,
+    reason: "service_unavailable",
+    error: "Gemini retries exhausted.",
+    model: options.model,
+    cooldownMs: 5000,
     debug,
   };
 }
 
-function shouldRetryWithNextModel(failure: GeminiFailure): boolean {
-  if (failure.reason !== "http_error") {
-    return false;
-  }
-  if (failure.debug.status !== 404) {
-    return false;
-  }
-  return /is not found for API version|not supported for generateContent/i.test(failure.error);
-}
-
 export async function callGeminiJson<T>(
-  options: GeminiJsonRequestOptions,
+  rawOptions: GeminiJsonRequestOptions,
 ): Promise<GeminiJsonSuccess<T> | GeminiFailure> {
-  const models = modelCandidates();
-  let modelFailure: GeminiFailure | null = null;
-  let textResult: GeminiTextSuccess | null = null;
+  const options = normalizeOptions(rawOptions);
+  const singleFlightKey = buildSingleFlightKey(options);
 
-  for (const model of models) {
-    const callResult = await callGeminiTextOnce(options, model, true);
-    if (callResult.ok) {
-      textResult = callResult;
-      break;
-    }
-
-    modelFailure = callResult;
-    if (shouldRetryWithNextModel(callResult)) {
-      console.warn(`[${options.routeTag}] Gemini retrying with alternate model after 404. previousUrl=${callResult.debug.url}`);
-      continue;
-    }
-    return callResult;
-  }
-
-  if (!textResult) {
-    return (
-      modelFailure ?? {
-        ok: false,
-        reason: "http_error",
-        error: "Gemini model lookup failed.",
-        model: models[0] ?? DEFAULT_GEMINI_MODEL,
-        debug: initialDebug(process.env.GEMINI_API_KEY, models[0] ?? DEFAULT_GEMINI_MODEL),
-      }
+  const inFlight = singleFlight.get(singleFlightKey);
+  if (inFlight) {
+    console.info(
+      `[${options.routeName}] Gemini single-flight hit requestId=${options.requestId} singleFlightKey=${singleFlightKey}`,
     );
+    return inFlight as Promise<GeminiJsonSuccess<T> | GeminiFailure>;
   }
 
-  const attempts = Math.max(1, options.maxParseAttempts ?? 2);
-  let lastFailure: GeminiFailure | null = null;
-
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const parsed = parseJsonFromText(textResult.text);
-    if (parsed.ok) {
-      if (process.env.NODE_ENV === "development") {
-        const parsedType =
-          parsed.value === null ? "null" : Array.isArray(parsed.value) ? "array" : typeof parsed.value;
-        const keys =
-          parsed.value && typeof parsed.value === "object" && !Array.isArray(parsed.value)
-            ? Object.keys(parsed.value as Record<string, unknown>)
-            : [];
-        console.debug(`[${options.routeTag}] Parsed Gemini JSON type=${parsedType} keys=${keys.join(",")}`);
-      }
-      return {
-        ok: true,
-        data: parsed.value as T,
-        debug: textResult.debug,
-      };
+  const work = (async () => {
+    const release = await geminiSemaphore.acquire();
+    try {
+      return await executeGeminiJsonRequest<T>(options, singleFlightKey);
+    } finally {
+      release();
     }
+  })();
 
-    const debug: GeminiDebugInfo = {
-      ...textResult.debug,
-      parseError: parsed.error,
-      rawSnippet: truncateRaw(textResult.text),
-    };
-
-    console.error(
-      `[${options.routeTag}] Gemini JSON parse attempt=${attempt}/${attempts} parseError="${parsed.error}" raw="${debug.rawSnippet}"`,
-    );
-
-    lastFailure = {
-      ok: false,
-      reason: "model_parse_error",
-      error: `Failed to parse Gemini candidate text as JSON after attempt ${attempt}.`,
-      model: textResult.model,
-      debug,
-    };
-
-    if (attempt < attempts) {
-      const retryResult = await callGeminiTextOnce(options, textResult.model, true);
-      if (!retryResult.ok) {
-        return retryResult;
-      }
-      textResult = retryResult;
-    }
+  singleFlight.set(singleFlightKey, work as Promise<GeminiJsonSuccess<unknown> | GeminiFailure>);
+  try {
+    return await work;
+  } finally {
+    singleFlight.delete(singleFlightKey);
   }
-
-  return (
-    lastFailure ?? {
-      ok: false,
-      reason: "model_parse_error",
-      error: "Failed to parse Gemini candidate text as JSON.",
-      model: models[0] ?? DEFAULT_GEMINI_MODEL,
-      debug: initialDebug(process.env.GEMINI_API_KEY, models[0] ?? DEFAULT_GEMINI_MODEL),
-    }
-  );
-}
-
-export async function callGeminiText(
-  options: GeminiRequestOptions,
-): Promise<GeminiTextSuccess | GeminiFailure> {
-  const models = modelCandidates();
-  let lastFailure: GeminiFailure | null = null;
-
-  for (const model of models) {
-    const result = await callGeminiTextOnce(options, model, true);
-    if (result.ok) {
-      return result;
-    }
-    lastFailure = result;
-    if (shouldRetryWithNextModel(result)) {
-      console.warn(`[${options.routeTag}] Gemini retrying with alternate model after 404. previousUrl=${result.debug.url}`);
-      continue;
-    }
-    return result;
-  }
-
-  return (
-    lastFailure ?? {
-      ok: false,
-      reason: "http_error",
-      error: "Gemini model lookup failed.",
-      model: models[0] ?? DEFAULT_GEMINI_MODEL,
-      debug: initialDebug(process.env.GEMINI_API_KEY, models[0] ?? DEFAULT_GEMINI_MODEL),
-    }
-  );
 }
 
 export function isDiagnosticRequest(request: Request): boolean {
@@ -496,6 +612,46 @@ export function isDiagnosticRequest(request: Request): boolean {
   return url.searchParams.get("diagnostic") === "1";
 }
 
-export function defaultGeminiDebugInfo(): GeminiDebugInfo {
-  return initialDebug(process.env.GEMINI_API_KEY, modelCandidates()[0] ?? DEFAULT_GEMINI_MODEL);
+export function requestIdFromRequest(request: Request): string {
+  return normalizeRequestId(request.headers.get("x-request-id") ?? undefined);
+}
+
+export function defaultGeminiDebugInfo(requestId?: string): GeminiDebugInfo {
+  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+  return {
+    requestId: normalizeRequestId(requestId),
+    keyPresent: Boolean(process.env.GEMINI_API_KEY),
+    model,
+    url: redactedUrlForModel(model),
+    status: 0,
+    rawSnippet: "",
+    parseError: null,
+    attempt: 0,
+    singleFlightKey: "",
+  };
+}
+
+export function isGeminiRateLimitFailure(failure: GeminiFailure): boolean {
+  return failure.reason === "rate_limited" || failure.reason === "service_unavailable";
+}
+
+export type GeminiRateLimitPayload = {
+  ok: false;
+  error: "RATE_LIMIT";
+  message: string;
+  cooldownMs: number;
+  requestId: string;
+};
+
+export function buildGeminiRateLimitPayload(failure: GeminiFailure): GeminiRateLimitPayload {
+  return {
+    ok: false,
+    error: "RATE_LIMIT",
+    message:
+      failure.reason === "rate_limited"
+        ? "Gemini rate limit reached. Please wait before trying again."
+        : "Gemini is temporarily overloaded. Please wait before trying again.",
+    cooldownMs: clamp(Math.round(failure.cooldownMs ?? 5000), 1000, 60000),
+    requestId: failure.debug.requestId,
+  };
 }

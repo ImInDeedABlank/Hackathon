@@ -9,6 +9,7 @@ import {
   clamp,
   defaultPlacementState,
   MAX_PLACEMENT_CYCLES,
+  QUESTIONS_PER_CYCLE,
   normalizePlacementState,
   validateAdaptiveQuestion,
   validatePlacementStepResponse,
@@ -33,11 +34,12 @@ import {
   callGeminiJson,
   defaultGeminiDebugInfo,
   isDiagnosticRequest,
+  requestIdFromRequest,
   type GeminiDebugInfo,
 } from "@/lib/geminiClient";
 import { buildPlacementSystemPrompt, buildPlacementUserPrompt } from "@/lib/placementPrompt";
 const SESSION_TTL_MS = 1000 * 60 * 90;
-const MIN_CYCLES_BEFORE_STOP = MAX_PLACEMENT_CYCLES;
+const MIN_CYCLES_BEFORE_CONFIDENT_STOP = 2;
 
 type SessionRecord = {
   sessionId: string;
@@ -45,7 +47,6 @@ type SessionRecord = {
   targetLanguage: TargetLanguage;
   interviewQuestions: [string, string, string];
   interviewAnswers: InterviewAnswer[];
-  typeHistoryByCycle: Record<number, QuestionType[]>;
   lastSeenAt: number;
 };
 
@@ -55,6 +56,8 @@ const TYPE_PLAN_BY_CYCLE: Record<number, QuestionType[]> = {
   1: ["mcq", "fill", "short", "reorder", "mcq"],
   2: ["fill", "reorder", "mcq", "short", "fill"],
   3: ["short", "mcq", "reorder", "fill", "short"],
+  4: ["reorder", "short", "mcq", "fill", "reorder"],
+  5: ["mcq", "short", "fill", "reorder", "mcq"],
 };
 
 type FallbackQuestionEntry = {
@@ -251,17 +254,28 @@ function parseStepRequest(raw: unknown): PlacementStepRequest {
 
   const lastRaw = source.last && typeof source.last === "object" ? (source.last as Record<string, unknown>) : null;
   let last: StepPayloadLast | undefined;
-  if (
-    lastRaw &&
-    lastRaw.question &&
-    typeof lastRaw.question === "object" &&
-    validateAdaptiveQuestion(lastRaw.question) &&
-    typeof lastRaw.userAnswer === "string"
-  ) {
-    last = {
-      question: lastRaw.question,
-      userAnswer: lastRaw.userAnswer.trim(),
-    };
+  if (lastRaw) {
+    const cycle =
+      typeof lastRaw.cycle === "number" ? clamp(Math.round(lastRaw.cycle), 1, MAX_PLACEMENT_CYCLES) : null;
+    const questionsRaw = Array.isArray(lastRaw.questions) ? lastRaw.questions : null;
+    const answersRaw = Array.isArray(lastRaw.answers) ? lastRaw.answers : null;
+
+    const hasValidQuestions =
+      questionsRaw !== null &&
+      questionsRaw.length === QUESTIONS_PER_CYCLE &&
+      questionsRaw.every((item) => validateAdaptiveQuestion(item) && item.type !== "essay");
+    const hasValidAnswers =
+      answersRaw !== null &&
+      answersRaw.length === QUESTIONS_PER_CYCLE &&
+      answersRaw.every((item) => typeof item === "string");
+
+    if (cycle !== null && hasValidQuestions && hasValidAnswers) {
+      last = {
+        cycle,
+        questions: questionsRaw as AdaptiveQuestion[],
+        answers: answersRaw.map((item) => item.trim()),
+      };
+    }
   }
 
   return {
@@ -288,7 +302,6 @@ function getSession(sessionId: string | undefined, uiLanguage: UILanguage, targe
     targetLanguage,
     interviewQuestions: ["", "", ""],
     interviewAnswers: [],
-    typeHistoryByCycle: {},
     lastSeenAt: Date.now(),
   };
   sessions.set(createdId, created);
@@ -320,7 +333,19 @@ function fallbackEntry(
   return entries[indexSeed % entries.length];
 }
 
-function fallbackQuestion({
+function cycleTypePlan(cycle: number): QuestionType[] {
+  const clampedCycle = clamp(cycle, 1, MAX_PLACEMENT_CYCLES);
+  const fallbackPlan = TYPE_PLAN_BY_CYCLE[1];
+  return (TYPE_PLAN_BY_CYCLE[clampedCycle] ?? fallbackPlan).slice(0, QUESTIONS_PER_CYCLE);
+}
+
+function skillForQuestionType(type: QuestionType): Skill {
+  if (type === "mcq") return "vocab";
+  if (type === "fill" || type === "reorder") return "grammar";
+  return "reading";
+}
+
+function fallbackCycleQuestions({
   sessionId,
   state,
   targetLanguage,
@@ -328,29 +353,27 @@ function fallbackQuestion({
   sessionId: string;
   state: PlacementState;
   targetLanguage: TargetLanguage;
-}): AdaptiveQuestion {
-  const type =
-    state.questionIndex === 6
-      ? "essay"
-      : TYPE_PLAN_BY_CYCLE[clamp(state.cycle, 1, MAX_PLACEMENT_CYCLES)][clamp(state.questionIndex, 1, 5) - 1];
-  const skill: Skill = type === "mcq" ? "vocab" : type === "fill" || type === "reorder" ? "grammar" : type === "essay" ? "writing" : "reading";
-  const entry = fallbackEntry(targetLanguage, type, state.difficulty, state.cycle + state.questionIndex);
-  const base: AdaptiveQuestion = {
-    id: `fallback-${sessionId}-c${state.cycle}-q${state.questionIndex}-${type}`,
-    type,
-    difficulty: state.difficulty,
-    skill,
-    prompt: entry.prompt,
-  };
-  if (type === "mcq" && entry.choices && entry.correctAnswer) {
-    base.choices = [...entry.choices];
-    base.correctAnswer = entry.correctAnswer;
-  } else if (type === "essay" && entry.rubric) {
-    base.rubric = entry.rubric;
-  } else if (entry.correctAnswer) {
-    base.correctAnswer = entry.correctAnswer;
-  }
-  return base;
+}): AdaptiveQuestion[] {
+  const plan = cycleTypePlan(state.cycle);
+  return plan.map((type, index) => {
+    const entry = fallbackEntry(targetLanguage, type, state.difficulty, state.cycle + index + 1);
+    const question: AdaptiveQuestion = {
+      id: `fallback-${sessionId}-c${state.cycle}-q${index + 1}-${type}`,
+      type,
+      difficulty: state.difficulty,
+      skill: skillForQuestionType(type),
+      prompt: entry.prompt,
+    };
+
+    if (type === "mcq" && entry.choices && entry.correctAnswer) {
+      question.choices = [...entry.choices];
+      question.correctAnswer = entry.correctAnswer;
+    } else if (entry.correctAnswer) {
+      question.correctAnswer = entry.correctAnswer;
+    }
+
+    return question;
+  });
 }
 
 function normalizeSimple(text: string): string {
@@ -362,7 +385,12 @@ function normalizeSimple(text: string): string {
 }
 
 function fallbackScoreDelta(difficulty: Difficulty, correct: boolean): number {
-  const base = difficulty === 1 ? 6 : difficulty === 2 ? 9 : 12;
+  const base = difficulty === 1 ? 4 : difficulty === 2 ? 6 : 8;
+  return correct ? base : -base;
+}
+
+function fallbackSkillDelta(difficulty: Difficulty, correct: boolean): number {
+  const base = difficulty === 1 ? 3 : difficulty === 2 ? 4 : 5;
   return correct ? base : -base;
 }
 
@@ -371,6 +399,49 @@ function updateSkillScore(scores: SkillScores, skill: Skill, delta: number): Ski
     ...scores,
     [skill]: clamp(scores[skill] + delta, 0, 100),
   };
+}
+
+function evaluateFallbackQuestion(question: AdaptiveQuestion, answer: string): { correct: boolean; delta: number } {
+  const received = normalizeSimple(answer);
+  const expected = question.correctAnswer ? normalizeSimple(question.correctAnswer) : "";
+  if (!received) {
+    return { correct: false, delta: fallbackScoreDelta(question.difficulty, false) };
+  }
+  if (!expected) {
+    return { correct: true, delta: fallbackScoreDelta(question.difficulty, true) };
+  }
+
+  let correct = false;
+  if (question.type === "short") {
+    correct = received === expected || received.includes(expected) || expected.includes(received);
+  } else {
+    correct = received === expected;
+  }
+
+  return {
+    correct,
+    delta: fallbackScoreDelta(question.difficulty, correct),
+  };
+}
+
+function shouldFallbackStopAfterCycle({
+  state,
+  grading,
+}: {
+  state: PlacementState;
+  grading: PlacementStepQuestionResponse["grading"];
+}): boolean {
+  if (state.cycle >= MAX_PLACEMENT_CYCLES) {
+    return true;
+  }
+  if (state.cycle < MIN_CYCLES_BEFORE_CONFIDENT_STOP) {
+    return false;
+  }
+
+  const highConfidence = state.confidence >= 78 && state.stability >= 65;
+  const stablePlateau = Math.abs(grading.scoreDelta) <= 6 && state.stability >= 70;
+  const lowerBandClear = state.cycle >= 3 && state.confidence <= 35 && state.stability >= 55;
+  return highConfidence || stablePlateau || lowerBandClear;
 }
 
 function buildFallbackFinal({
@@ -466,100 +537,116 @@ function fallbackStep({
   state: PlacementState;
   last?: StepPayloadLast;
 }): PlacementStepQuestionResponse | PlacementStepFinalResponse {
-  let nextState = { ...state };
-  let grading = {
-    wasCorrect: true,
-    scoreDelta: 0,
-    notes: "Initial step generated.",
-  };
-
-  if (last) {
-    const skill = last.question.skill;
-    const expected = last.question.correctAnswer ? normalizeSimple(last.question.correctAnswer) : "";
-    const received = normalizeSimple(last.userAnswer);
-    const correct = last.question.type === "essay" ? received.length > 0 && received.split(" ").length >= 6 : expected.length > 0 && (received === expected || received.includes(expected));
-    const delta = fallbackScoreDelta(last.question.difficulty, correct);
-    const stabilityShift = Math.abs(delta) <= 9 ? 4 : -2;
-    grading = {
-      wasCorrect: correct,
-      scoreDelta: delta,
-      notes: correct ? "Answer aligned with expected target." : "Answer deviated from expected target.",
+  if (!last) {
+    return {
+      done: false,
+      decision: {
+        endCycle: false,
+        stopExam: false,
+        reason: "Fallback initial cycle generation.",
+      },
+      state,
+      grading: {
+        cycleAverage: 0,
+        scoreDelta: 0,
+        notes: "Initial cycle generated.",
+      },
+      questions: fallbackCycleQuestions({
+        sessionId: session.sessionId,
+        state,
+        targetLanguage: session.targetLanguage,
+      }),
     };
-
-    nextState = {
-      ...nextState,
-      difficulty: asDifficulty(correct ? Math.min(3, nextState.difficulty + 1) : Math.max(1, nextState.difficulty - 1)),
-      confidence: clamp(nextState.confidence + delta, 0, 100),
-      stability: clamp(nextState.stability + stabilityShift, 0, 100),
-      skillScores: updateSkillScore(nextState.skillScores, skill, delta),
-      historySummary: `${nextState.historySummary} | c${nextState.cycle}q${nextState.questionIndex}:${skill}:${correct ? "1" : "0"}`.trim().slice(-3000),
-    };
-
-    if (nextState.questionIndex === 6) {
-      const shouldStopEarly =
-        nextState.cycle >= MIN_CYCLES_BEFORE_STOP && nextState.confidence < 40 && nextState.stability < 45;
-      const shouldStopAtMax = nextState.cycle >= MAX_PLACEMENT_CYCLES;
-      const stopExam = shouldStopEarly || shouldStopAtMax;
-      if (stopExam) {
-        return buildFallbackFinal({ state: nextState, session });
-      }
-      nextState = {
-        ...nextState,
-        cycle: clamp(nextState.cycle + 1, 1, MAX_PLACEMENT_CYCLES),
-        questionIndex: 1,
-      };
-    } else {
-      nextState = { ...nextState, questionIndex: clamp(nextState.questionIndex + 1, 1, 6) };
-    }
   }
 
-  const question = fallbackQuestion({
-    sessionId: session.sessionId,
-    state: nextState,
-    targetLanguage: session.targetLanguage,
-  });
+  const answers = last.answers.slice(0, QUESTIONS_PER_CYCLE);
+  const questions = last.questions.slice(0, QUESTIONS_PER_CYCLE);
+  let scoreDelta = 0;
+  let correctCount = 0;
+  let nextSkillScores = { ...state.skillScores };
+
+  for (let index = 0; index < QUESTIONS_PER_CYCLE; index += 1) {
+    const question = questions[index];
+    const answer = answers[index] ?? "";
+    const evaluation = evaluateFallbackQuestion(question, answer);
+    if (evaluation.correct) {
+      correctCount += 1;
+    }
+    scoreDelta += evaluation.delta;
+    nextSkillScores = updateSkillScore(
+      nextSkillScores,
+      question.skill,
+      fallbackSkillDelta(question.difficulty, evaluation.correct),
+    );
+  }
+
+  const cycleAverage = clamp(Math.round((correctCount / QUESTIONS_PER_CYCLE) * 100), 0, 100);
+  const stabilityShift = cycleAverage >= 75 ? 6 : cycleAverage >= 45 ? 2 : -5;
+  const nextDifficulty = asDifficulty(
+    cycleAverage >= 75
+      ? Math.min(3, state.difficulty + 1)
+      : cycleAverage <= 45
+        ? Math.max(1, state.difficulty - 1)
+        : state.difficulty,
+  );
+
+  const evaluatedState: PlacementState = {
+    ...state,
+    difficulty: nextDifficulty,
+    confidence: clamp(state.confidence + Math.round(scoreDelta / 2), 0, 100),
+    stability: clamp(state.stability + stabilityShift, 0, 100),
+    skillScores: nextSkillScores,
+    historySummary: `${state.historySummary} | c${state.cycle}:${correctCount}/${QUESTIONS_PER_CYCLE}:d${state.difficulty}`
+      .trim()
+      .slice(-3000),
+  };
+
+  const grading: PlacementStepQuestionResponse["grading"] = {
+    cycleAverage,
+    scoreDelta,
+    notes:
+      cycleAverage >= 75
+        ? "Strong cycle performance."
+        : cycleAverage >= 45
+          ? "Mixed cycle performance."
+          : "Cycle needs reinforcement before advancing difficulty.",
+  };
+
+  if (shouldFallbackStopAfterCycle({ state: evaluatedState, grading })) {
+    return buildFallbackFinal({ state: evaluatedState, session });
+  }
+
+  const nextState: PlacementState = {
+    ...evaluatedState,
+    cycle: clamp(state.cycle + 1, 1, MAX_PLACEMENT_CYCLES),
+  };
 
   return {
     done: false,
     decision: {
-      endCycle: nextState.questionIndex === 1 && state.questionIndex === 6,
+      endCycle: true,
       stopExam: false,
-      reason: "Fallback next step due model unavailability or parse failure.",
+      reason: "Fallback generated next cycle.",
     },
     state: nextState,
     grading,
-    question,
+    questions: fallbackCycleQuestions({
+      sessionId: session.sessionId,
+      state: nextState,
+      targetLanguage: session.targetLanguage,
+    }),
   };
 }
 
-function validateQuestionTypeCoverage({
-  session,
-  state,
-  question,
-}: {
-  session: SessionRecord;
-  state: PlacementState;
-  question: AdaptiveQuestion;
-}): boolean {
-  const cycle = clamp(state.cycle, 1, MAX_PLACEMENT_CYCLES);
-  const currentHistory = session.typeHistoryByCycle[cycle] ?? [];
-  const nonEssayHistory = currentHistory.filter((type) => type !== "essay");
-  if (state.questionIndex <= 5) {
-    const withNext = [...nonEssayHistory, question.type].filter((type) => type !== "essay");
-    if (state.questionIndex >= 5) {
-      const unique = new Set(withNext);
-      if (unique.size < 3) {
-        return false;
-      }
-    }
-  }
-  if (state.questionIndex === 6 && question.type !== "essay") {
+function validateCycleQuestionSet(questions: AdaptiveQuestion[]): boolean {
+  if (questions.length !== QUESTIONS_PER_CYCLE) {
     return false;
   }
-  if (state.questionIndex <= 5 && question.type === "essay") {
+  if (!questions.every((question) => validateAdaptiveQuestion(question) && question.type !== "essay")) {
     return false;
   }
-  return true;
+  const uniqueTypes = new Set(questions.map((question) => question.type));
+  return uniqueTypes.size >= 3;
 }
 
 function readQuestionsFromStartPayload(raw: unknown): [string, string, string] | null {
@@ -591,9 +678,7 @@ function coerceStepResponseRaw(raw: unknown): unknown {
     if (typeof decision.reason !== "string") {
       decision.reason = "";
     }
-    if (typeof decision.stopExam !== "boolean") {
-      decision.stopExam = true;
-    }
+    decision.stopExam = true;
     source.decision = decision;
     if (!source.state || typeof source.state !== "object") {
       source.state = defaultPlacementState();
@@ -605,9 +690,7 @@ function coerceStepResponseRaw(raw: unknown): unknown {
   if (typeof decision.reason !== "string") {
     decision.reason = "";
   }
-  if (typeof decision.stopExam !== "boolean") {
-    decision.stopExam = false;
-  }
+  decision.stopExam = false;
   if ("endCycle" in decision && typeof decision.endCycle !== "boolean") {
     decision.endCycle = false;
   }
@@ -620,24 +703,26 @@ function coerceStepResponseRaw(raw: unknown): unknown {
   const grading = source.grading && typeof source.grading === "object" ? (source.grading as Record<string, unknown>) : null;
   if (!grading) {
     source.grading = {
-      wasCorrect: false,
+      cycleAverage: 0,
       scoreDelta: 0,
       notes: "Auto-normalized grading note.",
     };
-    return source;
+  } else {
+    if (typeof grading.cycleAverage !== "number" || Number.isNaN(grading.cycleAverage) || !Number.isFinite(grading.cycleAverage)) {
+      grading.cycleAverage = 0;
+    }
+    if (typeof grading.scoreDelta !== "number" || Number.isNaN(grading.scoreDelta) || !Number.isFinite(grading.scoreDelta)) {
+      grading.scoreDelta = 0;
+    }
+    if (typeof grading.notes !== "string") {
+      grading.notes = "Auto-normalized grading note.";
+    }
+    source.grading = grading;
   }
 
-  if (typeof grading.wasCorrect !== "boolean") {
-    grading.wasCorrect = false;
+  if (!Array.isArray(source.questions)) {
+    source.questions = [];
   }
-  if (typeof grading.scoreDelta !== "number" || Number.isNaN(grading.scoreDelta) || !Number.isFinite(grading.scoreDelta)) {
-    grading.scoreDelta = 0;
-  }
-  if (typeof grading.notes !== "string") {
-    grading.notes = "Auto-normalized grading note.";
-  }
-
-  source.grading = grading;
   return source;
 }
 
@@ -679,16 +764,16 @@ function normalizeStepResponseOrNull(raw: unknown): PlacementStepQuestionRespons
     done: false,
     decision: {
       endCycle: !!normalizedRaw.decision.endCycle,
-      stopExam: !!normalizedRaw.decision.stopExam,
+      stopExam: false,
       reason: normalizedRaw.decision.reason,
     },
     state: normalizePlacementState(normalizedRaw.state),
     grading: {
-      wasCorrect: normalizedRaw.grading.wasCorrect,
+      cycleAverage: clamp(Math.round(normalizedRaw.grading.cycleAverage), 0, 100),
       scoreDelta: Math.round(normalizedRaw.grading.scoreDelta),
       notes: normalizedRaw.grading.notes,
     },
-    question: normalizedRaw.question,
+    questions: normalizedRaw.questions.slice(0, QUESTIONS_PER_CYCLE),
   };
 }
 
@@ -714,7 +799,7 @@ function withPlacementDebug<T extends object>(
   };
 }
 
-async function handleStart(raw: unknown, diagnostic: boolean): Promise<NextResponse> {
+async function handleStart(raw: unknown, diagnostic: boolean, requestId: string): Promise<NextResponse> {
   cleanupSessions();
   const body = parseStartRequest(raw);
   const session = getSession(undefined, body.uiLanguage, body.targetLanguage);
@@ -723,19 +808,27 @@ async function handleStart(raw: unknown, diagnostic: boolean): Promise<NextRespo
   const fallbackStatus = 200;
   let fallbackError: string | undefined;
 
+  const startSystemPrompt = buildPlacementSystemPrompt({
+    mode: "start",
+    uiLanguage: body.uiLanguage,
+    targetLanguage: body.targetLanguage,
+  });
+  const startUserPrompt = buildPlacementUserPrompt({
+    mode: "start",
+    uiLanguage: body.uiLanguage,
+    targetLanguage: body.targetLanguage,
+  });
+
   const gemini = await callGeminiJson<unknown>({
-    routeTag: "api/placement:start",
-    systemPrompt: buildPlacementSystemPrompt({
-      mode: "start",
-      uiLanguage: body.uiLanguage,
-      targetLanguage: body.targetLanguage,
-    }),
-    userPrompt: buildPlacementUserPrompt({
-      mode: "start",
-      uiLanguage: body.uiLanguage,
-      targetLanguage: body.targetLanguage,
-    }),
-    maxParseAttempts: 2,
+    routeName: "api/placement:start",
+    requestId,
+    prompt: `System Prompt:\n${startSystemPrompt}\n\nUser Input:\n${startUserPrompt}`,
+    schema: '{"questions":["string","string","string"]}',
+    singleFlightParts: {
+      language: body.targetLanguage,
+      mode: "placement_start",
+      stepId: "start",
+    },
   });
 
   const debug: GeminiDebugInfo = gemini.debug;
@@ -759,7 +852,6 @@ async function handleStart(raw: unknown, diagnostic: boolean): Promise<NextRespo
   session.targetLanguage = body.targetLanguage;
   session.interviewQuestions = interviewQuestions;
   session.interviewAnswers = [];
-  session.typeHistoryByCycle = {};
   session.lastSeenAt = Date.now();
 
   const responseBody: PlacementStartResponse = {
@@ -780,7 +872,7 @@ async function handleStart(raw: unknown, diagnostic: boolean): Promise<NextRespo
   );
 }
 
-async function handleStep(raw: unknown, diagnostic: boolean): Promise<NextResponse> {
+async function handleStep(raw: unknown, diagnostic: boolean, requestId: string): Promise<NextResponse> {
   cleanupSessions();
   const body = parseStepRequest(raw);
   const session = getSession(body.sessionId, body.uiLanguage, body.targetLanguage);
@@ -797,28 +889,32 @@ async function handleStep(raw: unknown, diagnostic: boolean): Promise<NextRespon
   let fallbackError: string | undefined;
   let fallbackReason: string | null = null;
 
-  const currentTypes = (session.typeHistoryByCycle[state.cycle] ?? []).filter((type) => type !== "essay");
+  const stepSystemPrompt = buildPlacementSystemPrompt({
+    mode: "step",
+    uiLanguage: session.uiLanguage,
+    targetLanguage: session.targetLanguage,
+  });
+  const stepUserPrompt = buildPlacementUserPrompt({
+    mode: "step",
+    sessionId: session.sessionId,
+    uiLanguage: session.uiLanguage,
+    targetLanguage: session.targetLanguage,
+    interviewAnswers: session.interviewAnswers,
+    state,
+    last: body.last,
+  });
+
   const gemini = await callGeminiJson<unknown>({
-    routeTag: "api/placement:step",
-    systemPrompt: buildPlacementSystemPrompt({
-      mode: "step",
-      uiLanguage: session.uiLanguage,
-      targetLanguage: session.targetLanguage,
-    }),
-    userPrompt: buildPlacementUserPrompt({
-      mode: "step",
-      sessionId: session.sessionId,
-      uiLanguage: session.uiLanguage,
-      targetLanguage: session.targetLanguage,
-      interviewAnswers: session.interviewAnswers,
-      state,
-      last: body.last,
-      historyHints: {
-        nonEssayTypesInCurrentCycle: currentTypes,
-        questionsAnsweredInCurrentCycle: currentTypes.length,
-      },
-    }),
-    maxParseAttempts: 2,
+    routeName: "api/placement:step",
+    requestId,
+    prompt: `System Prompt:\n${stepSystemPrompt}\n\nUser Input:\n${stepUserPrompt}`,
+    schema:
+      '{"done":false,"decision":{"endCycle":false,"stopExam":false,"reason":"string"},"state":{"cycle":1,"questionIndex":1,"difficulty":1,"confidence":0,"stability":0,"skillScores":{"vocab":0,"grammar":0,"reading":0,"writing":0},"historySummary":"string"},"grading":{"cycleAverage":0,"scoreDelta":0,"notes":"string"},"questions":[]}',
+    singleFlightParts: {
+      language: session.targetLanguage,
+      mode: "placement_step",
+      stepId: body.last ? `cycle-${state.cycle}` : "initial",
+    },
   });
 
   const debug: GeminiDebugInfo = gemini.debug;
@@ -826,37 +922,25 @@ async function handleStep(raw: unknown, diagnostic: boolean): Promise<NextRespon
   if (gemini.ok) {
     const normalized = normalizeStepResponseOrNull(gemini.data);
     if (normalized) {
-      let adjusted = normalized;
-      if (!adjusted.done && !body.last) {
-        adjusted = {
-          ...adjusted,
-          state: {
-            ...adjusted.state,
-            questionIndex: 1,
-          },
-          grading: {
-            ...adjusted.grading,
-            wasCorrect: true,
-            scoreDelta: 0,
-            notes: "Initial step generated.",
-          },
-        };
-      }
-
-      if (!adjusted.done) {
-        if (adjusted.state.cycle < 1 || adjusted.state.cycle > MAX_PLACEMENT_CYCLES) {
+      if (!normalized.done) {
+        if (!validateCycleQuestionSet(normalized.questions)) {
+          fallbackReason = "invalid_question_set";
+        } else if (normalized.state.cycle < 1 || normalized.state.cycle > MAX_PLACEMENT_CYCLES) {
           fallbackReason = "invalid_cycle";
-        } else if (!validateQuestionTypeCoverage({ session, state: adjusted.state, question: adjusted.question })) {
-          fallbackReason = "question_type_coverage";
-        } else if (adjusted.decision.stopExam && adjusted.state.cycle < MIN_CYCLES_BEFORE_STOP) {
-          fallbackReason = "early_stop_rejected";
+        } else if (!body.last && normalized.state.cycle !== state.cycle) {
+          fallbackReason = "invalid_initial_cycle";
+        } else if (body.last && normalized.state.cycle <= state.cycle) {
+          fallbackReason = "cycle_not_advanced";
         } else {
-          result = adjusted;
+          result = normalized;
         }
-      } else if (adjusted.summary.cyclesCompleted < MIN_CYCLES_BEFORE_STOP) {
-        fallbackReason = "cycles_completed_too_low";
       } else {
-        result = adjusted;
+        const minCompletedCycles = body.last ? state.cycle : 0;
+        if (normalized.summary.cyclesCompleted < minCompletedCycles) {
+          fallbackReason = "cycles_completed_too_low";
+        } else {
+          result = normalized;
+        }
       }
     } else {
       fallbackReason = "invalid_model_shape";
@@ -885,8 +969,6 @@ async function handleStep(raw: unknown, diagnostic: boolean): Promise<NextRespon
   }
 
   if (!result.done) {
-    const cycle = result.state.cycle;
-    session.typeHistoryByCycle[cycle] = [...(session.typeHistoryByCycle[cycle] ?? []), result.question.type].slice(-6);
     return NextResponse.json(
       withPlacementDebug(result, {
         diagnostic,
@@ -910,6 +992,7 @@ async function handleStep(raw: unknown, diagnostic: boolean): Promise<NextRespon
 
 export async function POST(request: Request) {
   const diagnostic = isDiagnosticRequest(request);
+  const requestId = requestIdFromRequest(request);
   let payload: unknown;
   try {
     payload = await request.json();
@@ -924,7 +1007,7 @@ export async function POST(request: Request) {
       : "start";
 
   if (action === "step") {
-    return handleStep(payload, diagnostic);
+    return handleStep(payload, diagnostic, requestId);
   }
-  return handleStart(payload, diagnostic);
+  return handleStart(payload, diagnostic, requestId);
 }

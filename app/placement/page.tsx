@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/LanguageProvider";
@@ -8,6 +8,7 @@ import ProgressBar from "@/app/components/ProgressBar";
 import {
   defaultPlacementState,
   MAX_PLACEMENT_CYCLES,
+  QUESTIONS_PER_CYCLE,
   normalizePlacementState,
   type AdaptiveQuestion,
   type InterviewAnswer,
@@ -26,6 +27,7 @@ import {
   writePlacementResult,
   writeString,
 } from "@/lib/placementStorage";
+import { ApiFetchError, apiFetch } from "@/src/lib/apiFetch";
 
 type Phase = "loading" | "interview" | "test";
 
@@ -79,10 +81,6 @@ function asUiLanguage(value: string): UILanguage {
   return value === "ar" ? "ar" : "en";
 }
 
-function sentenceCount(value: string): number {
-  const matches = value.trim().match(/[^.!?؟]+[.!?؟]?/g);
-  return matches ? matches.filter((part) => part.trim().length > 0).length : 0;
-}
 
 export default function PlacementPage() {
   const router = useRouter();
@@ -97,15 +95,32 @@ export default function PlacementPage() {
   const [state, setState] = useState<PlacementState>(defaultPlacementState());
   const [interviewQuestions, setInterviewQuestions] = useState<[string, string, string]>(["", "", ""]);
   const [interviewAnswers, setInterviewAnswers] = useState<[string, string, string]>(["", "", ""]);
-  const [question, setQuestion] = useState<AdaptiveQuestion | null>(null);
-  const [shortAnswer, setShortAnswer] = useState("");
-  const [selectedChoice, setSelectedChoice] = useState("");
+  const [cycleQuestions, setCycleQuestions] = useState<AdaptiveQuestion[]>([]);
+  const [cycleAnswers, setCycleAnswers] = useState<string[]>([]);
   const [gradingNote, setGradingNote] = useState("");
   const [decisionNote, setDecisionNote] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const [cooldownMs, setCooldownMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const bootGuardRef = useRef<string>("");
 
   useEffect(() => {
+    if (cooldownMs <= 0) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setCooldownMs((prev) => Math.max(0, prev - 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownMs]);
+
+  useEffect(() => {
+    const bootKey = `${lang}`;
+    if (bootGuardRef.current === bootKey) {
+      return;
+    }
+    bootGuardRef.current = bootKey;
+
     const boot = async () => {
       setIsBusy(true);
       setError(null);
@@ -117,16 +132,15 @@ export default function PlacementPage() {
       setTargetLanguage(localTarget);
 
       try {
-        const response = await fetch("/api/placement", {
+        const response = await apiFetch<PlacementStartResponse>("/api/placement", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+          body: {
             action: "start",
             uiLanguage: localUi,
             targetLanguage: localTarget,
-          }),
+          },
         });
-        const data = (await response.json()) as PlacementStartResponse;
+        const data = response.data;
         if (!data.sessionId || !Array.isArray(data.interview.questions) || data.interview.questions.length < 3) {
           throw new Error("start_shape_invalid");
         }
@@ -138,8 +152,17 @@ export default function PlacementPage() {
         ]);
         setState(normalizePlacementState(data.state));
         setPhase("interview");
-      } catch {
-        setError(copy.fallbackError);
+      } catch (error) {
+        if (error instanceof ApiFetchError && error.isRateLimit) {
+          setCooldownMs(error.cooldownMs ?? 5000);
+          setError(
+            localUi === "ar"
+              ? "تم تجاوز حد الطلبات. يرجى الانتظار قليلًا ثم المحاولة مرة أخرى."
+              : "Rate limit reached. Please wait a few seconds and try again.",
+          );
+        } else {
+          setError(copy.fallbackError);
+        }
       } finally {
         setIsBusy(false);
       }
@@ -154,28 +177,29 @@ export default function PlacementPage() {
   );
   const interviewReady = answeredInterviewCount >= 2;
 
-  const currentAnswer = question?.type === "mcq" ? selectedChoice : shortAnswer;
-  const essayCount = question?.type === "essay" ? sentenceCount(shortAnswer) : 0;
-  const canSubmitQuestion =
-    !!question &&
-    !isBusy &&
-    currentAnswer.trim().length > 0 &&
-    (question.type !== "essay" || (essayCount >= 1 && essayCount <= 3));
+  const answeredCycleCount = useMemo(
+    () => cycleAnswers.filter((item) => item.trim().length > 0).length,
+    [cycleAnswers],
+  );
+  const canSubmitCycle =
+    cycleQuestions.length === QUESTIONS_PER_CYCLE &&
+    cycleAnswers.length === cycleQuestions.length &&
+    cycleAnswers.every((item) => item.trim().length > 0) &&
+    !isBusy;
 
   const interviewPayload: InterviewAnswer[] = interviewQuestions.map((q, index) => ({
     q,
     a: interviewAnswers[index]?.trim() ?? "",
   }));
 
-  async function runStep(last?: { question: AdaptiveQuestion; userAnswer: string }) {
+  async function runStep(last?: { cycle: number; questions: AdaptiveQuestion[]; answers: string[] }) {
     if (!sessionId) return;
     setIsBusy(true);
     setError(null);
     try {
-      const response = await fetch("/api/placement", {
+      const response = await apiFetch<PlacementStepQuestionResponse | PlacementStepFinalResponse>("/api/placement", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           action: "step",
           uiLanguage,
           targetLanguage,
@@ -183,9 +207,9 @@ export default function PlacementPage() {
           interviewAnswers: interviewPayload,
           state,
           last,
-        }),
+        },
       });
-      const payload = (await response.json()) as PlacementStepQuestionResponse | PlacementStepFinalResponse;
+      const payload = response.data;
 
       if (payload.done) {
         writePlacementResult(normalizePlacementResult(payload.placement));
@@ -199,13 +223,23 @@ export default function PlacementPage() {
 
       setPhase("test");
       setState(normalizePlacementState(payload.state));
-      setQuestion(payload.question);
-      setGradingNote(`${payload.grading.notes} (${payload.grading.scoreDelta >= 0 ? "+" : ""}${payload.grading.scoreDelta})`);
+      setCycleQuestions(payload.questions);
+      setCycleAnswers(Array.from({ length: payload.questions.length }, () => ""));
+      setGradingNote(
+        `${payload.grading.notes} (${payload.grading.scoreDelta >= 0 ? "+" : ""}${payload.grading.scoreDelta}, ${payload.grading.cycleAverage}%)`,
+      );
       setDecisionNote(payload.decision.reason);
-      setShortAnswer("");
-      setSelectedChoice("");
-    } catch {
-      setError(copy.fallbackError);
+    } catch (error) {
+      if (error instanceof ApiFetchError && error.isRateLimit) {
+        setCooldownMs(error.cooldownMs ?? 5000);
+        setError(
+          uiLanguage === "ar"
+            ? "تم تجاوز حد الطلبات. يرجى الانتظار قليلًا ثم إعادة المحاولة."
+            : "Rate limit reached. Please wait a bit before retrying.",
+        );
+      } else {
+        setError(copy.fallbackError);
+      }
     } finally {
       setIsBusy(false);
     }
@@ -216,12 +250,23 @@ export default function PlacementPage() {
     await runStep(undefined);
   };
 
-  const handleSubmitAnswer = async () => {
-    if (!question || !canSubmitQuestion) return;
-    const answer = question.type === "mcq" ? selectedChoice : shortAnswer;
+  const handleSubmitCycle = async () => {
+    if (!canSubmitCycle) return;
     await runStep({
-      question,
-      userAnswer: answer.trim(),
+      cycle: state.cycle,
+      questions: cycleQuestions,
+      answers: cycleAnswers.map((item) => item.trim()),
+    });
+  };
+
+  const updateCycleAnswer = (index: number, value: string) => {
+    setCycleAnswers((prev) => {
+      const next = [...prev];
+      while (next.length < cycleQuestions.length) {
+        next.push("");
+      }
+      next[index] = value;
+      return next;
     });
   };
 
@@ -240,7 +285,7 @@ export default function PlacementPage() {
             </div>
             <div className="theme-panel-soft rounded-xl p-3">
               <p className="text-xs text-slate-500">{copy.question}</p>
-              <p className="text-sm font-semibold text-slate-900">{state.questionIndex}/6</p>
+              <p className="text-sm font-semibold text-slate-900">{answeredCycleCount}/{QUESTIONS_PER_CYCLE}</p>
             </div>
             <div className="theme-panel-soft rounded-xl p-3">
               <p className="text-xs text-slate-500">{copy.stability}</p>
@@ -285,7 +330,7 @@ export default function PlacementPage() {
               <button
                 type="button"
                 onClick={handleBeginTest}
-                disabled={!interviewReady || isBusy}
+                disabled={!interviewReady || isBusy || cooldownMs > 0}
                 className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {copy.beginTest}
@@ -294,58 +339,61 @@ export default function PlacementPage() {
           </section>
         ) : null}
 
-        {phase === "test" && question ? (
+        {phase === "test" && cycleQuestions.length > 0 ? (
           <section className={`theme-panel rounded-2xl p-5 sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">
-              {question.type} • {question.skill} • D{question.difficulty}
-            </p>
-            <p className="mt-2 text-base font-medium text-slate-900">{question.prompt}</p>
+            <div className="space-y-4">
+              {cycleQuestions.map((cycleQuestion, index) => {
+                const answer = cycleAnswers[index] ?? "";
+                return (
+                  <article key={cycleQuestion.id} className="theme-panel-soft rounded-xl p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">
+                      Q{index + 1} | {cycleQuestion.type} | {cycleQuestion.skill} | D{cycleQuestion.difficulty}
+                    </p>
+                    <p className="mt-2 text-base font-medium text-slate-900">{cycleQuestion.prompt}</p>
 
-            <div className="mt-4">
-              {question.type === "mcq" ? (
-                <div className="space-y-2">
-                  {(question.choices ?? []).map((choice) => {
-                    const selected = selectedChoice === choice;
-                    return (
-                      <button
-                        key={choice}
-                        type="button"
-                        onClick={() => setSelectedChoice(choice)}
-                        className={`quiz-option w-full rounded-xl px-4 py-3 text-sm transition ${selected ? "quiz-option-selected" : "hover:-translate-y-0.5"}`}
-                      >
-                        {choice}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : question.type === "short" || question.type === "essay" ? (
-                <textarea
-                  value={shortAnswer}
-                  onChange={(event) => setShortAnswer(event.target.value)}
-                  className="min-h-24 w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-                  placeholder={copy.placeholder}
-                />
-              ) : (
-                <input
-                  value={shortAnswer}
-                  onChange={(event) => setShortAnswer(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-                  placeholder={copy.placeholder}
-                />
-              )}
+                    <div className="mt-3">
+                      {cycleQuestion.type === "mcq" ? (
+                        <div className="space-y-2">
+                          {(cycleQuestion.choices ?? []).map((choice) => {
+                            const selected = answer === choice;
+                            return (
+                              <button
+                                key={choice}
+                                type="button"
+                                onClick={() => updateCycleAnswer(index, choice)}
+                                className={`quiz-option w-full rounded-xl px-4 py-3 text-sm transition ${selected ? "quiz-option-selected" : "hover:-translate-y-0.5"}`}
+                              >
+                                {choice}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : cycleQuestion.type === "short" || cycleQuestion.type === "essay" ? (
+                        <textarea
+                          value={answer}
+                          onChange={(event) => updateCycleAnswer(index, event.target.value)}
+                          className="min-h-24 w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                          placeholder={copy.placeholder}
+                        />
+                      ) : (
+                        <input
+                          value={answer}
+                          onChange={(event) => updateCycleAnswer(index, event.target.value)}
+                          className="w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                          placeholder={copy.placeholder}
+                        />
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-
-            {question.type === "essay" ? (
-              <p className="mt-2 text-xs text-slate-500">
-                {copy.essayHint} ({essayCount})
-              </p>
-            ) : null}
 
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
-                onClick={handleSubmitAnswer}
-                disabled={!canSubmitQuestion}
+                onClick={handleSubmitCycle}
+                disabled={!canSubmitCycle || cooldownMs > 0}
                 className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {copy.submit}

@@ -509,7 +509,10 @@ function recommendationPrompt(profile: NormalizedPlacementProfile): string {
   ].join("\n");
 }
 
-export async function generateVideoRecommendations(profile: NormalizedPlacementProfile): Promise<{
+export async function generateVideoRecommendations(
+  profile: NormalizedPlacementProfile,
+  requestId?: string,
+): Promise<{
   recommendation: VideoRecommendationModel;
   usedGemini: boolean;
   usedFallbackTopics: boolean;
@@ -517,10 +520,17 @@ export async function generateVideoRecommendations(profile: NormalizedPlacementP
 }> {
   const fallback = fallbackRecommendations(profile);
   const gemini = await callGeminiJson<unknown>({
-    routeTag: "api/learning-videos.recommend",
-    systemPrompt: "You are LinguaSim pedagogical recommendation planner. Return strict JSON only.",
-    userPrompt: recommendationPrompt(profile),
-    maxParseAttempts: 2,
+    routeName: "api/learning-videos.recommend",
+    requestId,
+    prompt: `System Prompt:\nYou are LinguaSim pedagogical recommendation planner. Return strict JSON only.\n\nUser Input:\n${recommendationPrompt(profile)}`,
+    schema:
+      '{"language":"en","level":"A1","learnerProfileSummary":"string","recommendedTopics":[{"topic":"string","reason":"string","difficulty":"A1","searchQueries":["string","string"]}],"pacingAdvice":"string","weeklyPlanHint":"string"}',
+    maxOutputTokens: 1400,
+    singleFlightParts: {
+      language: profile.selectedLanguageCode,
+      mode: "learning_videos_recommend",
+      stepId: profile.cefrLevel,
+    },
   });
 
   if (!gemini.ok) {

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { callGeminiJson } from "@/lib/geminiClient";
+import {
+  buildGeminiRateLimitPayload,
+  callGeminiJson,
+  isGeminiRateLimitFailure,
+  requestIdFromRequest,
+} from "@/lib/geminiClient";
 
 type TargetLanguage = "English" | "Arabic" | "Spanish";
 type LearnerLevel = "Beginner" | "Intermediate" | "Advanced";
@@ -310,7 +315,7 @@ function parseEvaluateRequest(raw: unknown): EvaluateRequest {
   };
 }
 
-async function handleGenerate(input: GenerateRequest): Promise<GenerateResponse> {
+async function handleGenerate(input: GenerateRequest, requestId: string): Promise<NextResponse> {
   const fallback: GenerateResponse = {
     sentence: fallbackGenerateSentence(input),
     difficulty: toDifficulty(input.level),
@@ -331,21 +336,29 @@ async function handleGenerate(input: GenerateRequest): Promise<GenerateResponse>
   ].join("\n");
 
   const gemini = await callGeminiJson<unknown>({
-    routeTag: "api/repeat.generate",
-    systemPrompt: "You create natural pronunciation drill prompts and return strict JSON.",
-    userPrompt: prompt,
-    maxParseAttempts: 2,
+    routeName: "api/repeat.generate",
+    requestId,
+    prompt: `System Prompt:\nYou create natural pronunciation drill prompts and return strict JSON.\n\nUser Input:\n${prompt}`,
+    schema: '{"sentence":"string","difficulty":1}',
+    singleFlightParts: {
+      language: input.targetLanguage,
+      mode: "repeat_generate",
+      stepId: input.scenario,
+    },
   });
 
   if (!gemini.ok) {
+    if (isGeminiRateLimitFailure(gemini)) {
+      return NextResponse.json(buildGeminiRateLimitPayload(gemini), { status: 429 });
+    }
     console.warn(`[api/repeat] generate fallback reason=${gemini.reason}`);
-    return fallback;
+    return NextResponse.json(fallback);
   }
 
-  return normalizeGenerateResponse(gemini.data, fallback);
+  return NextResponse.json(normalizeGenerateResponse(gemini.data, fallback));
 }
 
-async function handleEvaluate(input: EvaluateRequest): Promise<EvaluateResponse> {
+async function handleEvaluate(input: EvaluateRequest, requestId: string): Promise<NextResponse> {
   const clarityScore = computeClarityScore(input.expectedSentence, input.transcript);
 
   const fallbackGemini: EvaluateGeminiShape = {
@@ -367,11 +380,20 @@ async function handleEvaluate(input: EvaluateRequest): Promise<EvaluateResponse>
   ].join("\n");
 
   const gemini = await callGeminiJson<unknown>({
-    routeTag: "api/repeat.evaluate",
-    systemPrompt: "You are a pronunciation clarity coach and must return strict JSON.",
-    userPrompt: prompt,
-    maxParseAttempts: 2,
+    routeName: "api/repeat.evaluate",
+    requestId,
+    prompt: `System Prompt:\nYou are a pronunciation clarity coach and must return strict JSON.\n\nUser Input:\n${prompt}`,
+    schema: '{"corrected_version":"string","tips":["string","string","string"],"encouragement":"string"}',
+    singleFlightParts: {
+      language: input.targetLanguage,
+      mode: "repeat_evaluate",
+      stepId: input.expectedSentence,
+    },
   });
+
+  if (!gemini.ok && isGeminiRateLimitFailure(gemini)) {
+    return NextResponse.json(buildGeminiRateLimitPayload(gemini), { status: 429 });
+  }
 
   const normalizedGemini = gemini.ok
     ? normalizeEvaluateGeminiShape(gemini.data, fallbackGemini)
@@ -381,16 +403,18 @@ async function handleEvaluate(input: EvaluateRequest): Promise<EvaluateResponse>
     console.warn(`[api/repeat] evaluate fallback reason=${gemini.reason}`);
   }
 
-  return {
+  const response: EvaluateResponse = {
     clarityScore,
     transcript: input.transcript,
     corrected_version: normalizedGemini.corrected_version,
     tips: normalizedGemini.tips,
     encouragement: normalizedGemini.encouragement,
   };
+  return NextResponse.json(response);
 }
 
 export async function POST(request: Request) {
+  const requestId = requestIdFromRequest(request);
   let payload: unknown;
   try {
     payload = await request.json();
@@ -405,14 +429,12 @@ export async function POST(request: Request) {
 
   if (action === "generate") {
     const input = parseGenerateRequest(payload);
-    const response = await handleGenerate(input);
-    return NextResponse.json(response);
+    return handleGenerate(input, requestId);
   }
 
   if (action === "evaluate") {
     const input = parseEvaluateRequest(payload);
-    const response = await handleEvaluate(input);
-    return NextResponse.json(response);
+    return handleEvaluate(input, requestId);
   }
 
   return NextResponse.json({ error: "Unsupported action." }, { status: 400 });

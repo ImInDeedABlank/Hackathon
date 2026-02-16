@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requestIdFromRequest } from "@/lib/geminiClient";
 import { generateVideoRecommendations } from "@/lib/server/geminiRecommendations";
 import { normalizePlacementProfile } from "@/lib/server/placementProfile";
 import { buildQueryIntents, fetchRecommendedVideos } from "@/lib/server/videoProvider";
@@ -72,6 +73,7 @@ function lockedResponse(message: string): LearningVideosApiResponse {
 }
 
 export async function POST(request: Request) {
+  const requestId = requestIdFromRequest(request);
   let payload: unknown;
   try {
     payload = await request.json();
@@ -104,7 +106,7 @@ export async function POST(request: Request) {
     } satisfies LearningVideosApiResponse);
   }
 
-  const recommendationResult = await generateVideoRecommendations(profile);
+  const recommendationResult = await generateVideoRecommendations(profile, requestId);
   const queryIntents = buildQueryIntents(
     recommendationResult.recommendation.recommendedTopics,
     profile.cefrLevel,

@@ -1,9 +1,10 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/LanguageProvider";
+import { apiFetch } from "@/src/lib/apiFetch";
 import {
   STORAGE_KEYS,
   readNumber,
@@ -127,31 +128,28 @@ export default function SummaryPage() {
 
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const didRunSummaryRef = useRef(false);
 
   useEffect(() => {
+    if (didRunSummaryRef.current) {
+      return;
+    }
+    didRunSummaryRef.current = true;
     let cancelled = false;
 
     const run = async () => {
       try {
-        const response = await fetch("/api/summary", {
+        const response = await apiFetch<SummaryResponse>("/api/summary", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
+          body: {
             uiLanguage,
             targetLanguage,
             scenario,
             mode,
             turns: completedTurns,
-          }),
+          },
         });
-
-        if (!response.ok) {
-          throw new Error("summary_api_http_error");
-        }
-
-        const data = (await response.json()) as SummaryResponse;
+        const data = response.data;
 
         if (!cancelled) {
           setSummary(data);

@@ -4,7 +4,8 @@ export type Difficulty = 1 | 2 | 3;
 export type QuestionType = "mcq" | "fill" | "short" | "reorder" | "essay";
 export type Skill = "vocab" | "grammar" | "reading" | "writing";
 
-export const MAX_PLACEMENT_CYCLES = 1;
+export const MAX_PLACEMENT_CYCLES = 5;
+export const QUESTIONS_PER_CYCLE = 5;
 
 export type SkillScores = {
   vocab: number;
@@ -33,7 +34,6 @@ export type PlacementMetrics = {
 
 export type PlacementState = {
   cycle: number;
-  questionIndex: number;
   difficulty: Difficulty;
   confidence: number;
   skillScores: SkillScores;
@@ -58,8 +58,9 @@ export type InterviewAnswer = {
 };
 
 export type StepPayloadLast = {
-  question: AdaptiveQuestion;
-  userAnswer: string;
+  cycle: number;
+  questions: AdaptiveQuestion[];
+  answers: string[];
 };
 
 export type PlacementDecision = {
@@ -69,7 +70,7 @@ export type PlacementDecision = {
 };
 
 export type PlacementGrading = {
-  wasCorrect: boolean;
+  cycleAverage: number;
   scoreDelta: number;
   notes: string;
 };
@@ -103,7 +104,7 @@ export type PlacementStepQuestionResponse = {
   decision: PlacementDecision;
   state: PlacementState;
   grading: PlacementGrading;
-  question: AdaptiveQuestion;
+  questions: AdaptiveQuestion[];
 };
 
 export type PlacementSummary = {
@@ -162,7 +163,6 @@ export function defaultSkillScores(): SkillScores {
 export function defaultPlacementState(): PlacementState {
   return {
     cycle: 1,
-    questionIndex: 1,
     difficulty: 2,
     confidence: 35,
     skillScores: defaultSkillScores(),
@@ -185,7 +185,6 @@ export function normalizePlacementState(value: unknown): PlacementState {
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   return {
     cycle: typeof source.cycle === "number" ? clamp(Math.round(source.cycle), 1, MAX_PLACEMENT_CYCLES) : 1,
-    questionIndex: typeof source.questionIndex === "number" ? clamp(Math.round(source.questionIndex), 1, 6) : 1,
     difficulty: asDifficulty(source.difficulty),
     confidence: typeof source.confidence === "number" ? clamp(Math.round(source.confidence), 0, 100) : 35,
     skillScores: normalizeSkillScores(source.skillScores),
@@ -310,13 +309,20 @@ export function validatePlacementStepResponse(
     return valid || fail("final response has invalid focus_areas or summary fields");
   }
 
+  if (decision.stopExam) {
+    return fail("decision.stopExam must be false when done is false");
+  }
+  if ("endCycle" in decision && typeof decision.endCycle !== "boolean") {
+    return fail("decision.endCycle must be boolean when provided");
+  }
+
   const grading = source.grading as Record<string, unknown> | undefined;
   if (!grading || typeof grading !== "object") {
     return fail("grading must be an object");
   }
 
-  if (typeof grading.wasCorrect !== "boolean") {
-    return fail("grading.wasCorrect must be boolean");
+  if (typeof grading.cycleAverage !== "number") {
+    return fail("grading.cycleAverage must be number");
   }
   if (typeof grading.scoreDelta !== "number") {
     return fail("grading.scoreDelta must be number");
@@ -324,8 +330,15 @@ export function validatePlacementStepResponse(
   if (typeof grading.notes !== "string") {
     return fail("grading.notes must be string");
   }
-  if (!validateAdaptiveQuestion(source.question)) {
-    return fail("question is invalid for adaptive schema");
+
+  if (!Array.isArray(source.questions) || source.questions.length !== QUESTIONS_PER_CYCLE) {
+    return fail(`questions must be an array with exactly ${QUESTIONS_PER_CYCLE} items`);
+  }
+  const validQuestions = source.questions.every(
+    (question) => validateAdaptiveQuestion(question) && question.type !== "essay",
+  );
+  if (!validQuestions) {
+    return fail("questions contains invalid items or unsupported question types");
   }
 
   return true;

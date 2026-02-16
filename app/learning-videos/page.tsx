@@ -57,12 +57,15 @@ export default function LearningVideosPage() {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [selectedTopic, setSelectedTopic] = useState<string>("All topics");
   const [sortMode, setSortMode] = useState<SortMode>("relevance");
+  const [isRequestInFlight, setIsRequestInFlight] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
+  const didInitRef = useRef(false);
 
   const loadRecommendations = useCallback(async () => {
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
+    setIsRequestInFlight(true);
 
     const placement = readPlacementResult();
     const meta = readPlacementMeta();
@@ -72,6 +75,10 @@ export default function LearningVideosPage() {
     if (!placement) {
       setResult(null);
       setLoadState("locked");
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        setIsRequestInFlight(false);
+      }
       return;
     }
 
@@ -115,13 +122,23 @@ export default function LearningVideosPage() {
       }
       setErrorMessage("Could not load recommendations right now. Please retry.");
       setLoadState("error");
+    } finally {
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        setIsRequestInFlight(false);
+      }
     }
   }, [lang]);
 
   useEffect(() => {
+    if (didInitRef.current) {
+      return;
+    }
+    didInitRef.current = true;
     const timer = window.setTimeout(() => {
       void loadRecommendations();
     }, 0);
+
     return () => {
       window.clearTimeout(timer);
       requestRef.current?.abort();
@@ -176,7 +193,8 @@ export default function LearningVideosPage() {
             <button
               type="button"
               onClick={() => void loadRecommendations()}
-              className="btn-glow mt-4 rounded-xl px-4 py-2.5 text-sm font-semibold"
+              disabled={isRequestInFlight}
+              className="btn-glow mt-4 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
             >
               Retry
             </button>
@@ -255,7 +273,8 @@ export default function LearningVideosPage() {
                 <button
                   type="button"
                   onClick={() => void loadRecommendations()}
-                  className="btn-outline rounded-xl px-3 py-1.5 text-xs font-semibold"
+                  disabled={isRequestInFlight}
+                  className="btn-outline rounded-xl px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Refresh
                 </button>

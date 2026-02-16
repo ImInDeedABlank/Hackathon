@@ -1,6 +1,11 @@
 ﻿import { NextResponse } from "next/server";
 
-import { callGeminiText } from "@/lib/geminiClient";
+import {
+  buildGeminiRateLimitPayload,
+  callGeminiJson,
+  isGeminiRateLimitFailure,
+  requestIdFromRequest,
+} from "@/lib/geminiClient";
 import type { SessionTurn } from "@/lib/validate";
 
 type UILanguage = "en" | "ar";
@@ -156,21 +161,6 @@ function parseSummaryInput(raw: unknown): SummaryInput {
   };
 }
 
-function stripJsonFences(text: string): string {
-  const trimmed = text.trim();
-  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return fencedMatch?.[1] ? fencedMatch[1].trim() : trimmed;
-}
-
-function parseJsonText(text: string): unknown | null {
-  const stripped = stripJsonFences(text);
-  try {
-    return JSON.parse(stripped) as unknown;
-  } catch {
-    return null;
-  }
-}
-
 function normalizeStringList(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) {
     return fallback;
@@ -269,6 +259,7 @@ function buildSummaryUserPrompt(input: SummaryInput): string {
 }
 
 export async function POST(request: Request) {
+  const requestId = requestIdFromRequest(request);
   let payload: unknown;
   try {
     payload = await request.json();
@@ -282,39 +273,30 @@ export async function POST(request: Request) {
   const systemPrompt = buildSummarySystemPrompt(input.uiLanguage);
   const baseUserPrompt = buildSummaryUserPrompt(input);
 
-  const prompts = [
-    baseUserPrompt,
-    `${baseUserPrompt}\n\nReturn JSON only. No markdown.`,
-  ];
+  const modelResult = await callGeminiJson<unknown>({
+    routeName: "api/summary",
+    requestId,
+    prompt: `System Prompt:\n${systemPrompt}\n\nUser Input:\n${baseUserPrompt}`,
+    schema:
+      '{"finalScore":0,"overallReview":"string","strengths":["string"],"weaknesses":["string"],"focusAreas":["string"],"nextSteps":["string"]}',
+    maxOutputTokens: 1200,
+    singleFlightParts: {
+      language: input.targetLanguage,
+      mode: input.mode,
+      stepId: input.turns.length,
+    },
+  });
 
-  for (let attempt = 0; attempt < prompts.length; attempt += 1) {
-    const modelResult = await callGeminiText({
-      routeTag: "api/summary",
-      systemPrompt,
-      userPrompt: prompts[attempt],
-      maxOutputTokens: 1200,
-    });
-
-    if (!modelResult.ok) {
-      if (
-        modelResult.reason === "missing_key" ||
-        modelResult.reason === "network_error" ||
-        modelResult.reason === "http_error"
-      ) {
-        break;
-      }
-      continue;
+  if (!modelResult.ok) {
+    if (isGeminiRateLimitFailure(modelResult)) {
+      return NextResponse.json(buildGeminiRateLimitPayload(modelResult), { status: 429 });
     }
+    return NextResponse.json(fallback);
+  }
 
-    const parsed = parseJsonText(modelResult.text);
-    if (parsed === null) {
-      continue;
-    }
-
-    const normalized = normalizeSummaryOutput(parsed, input);
-    if (normalized) {
-      return NextResponse.json(normalized);
-    }
+  const normalized = normalizeSummaryOutput(modelResult.data, input);
+  if (normalized) {
+    return NextResponse.json(normalized);
   }
 
   return NextResponse.json(fallback);
