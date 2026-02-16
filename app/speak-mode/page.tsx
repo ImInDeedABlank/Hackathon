@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/LanguageProvider";
+import SectionHeader from "@/app/components/ui/SectionHeader";
 import { STORAGE_KEYS, readString, writeString } from "@/lib/placementStorage";
 
 type SpeakSubMode = "conversation" | "repeat";
@@ -49,16 +50,20 @@ export default function SpeakModePage() {
   };
 
   return (
-    <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+    <main className="app-page theme-page">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
       <div className="theme-top-fade pointer-events-none absolute left-1/2 top-0 h-56 w-[40rem] -translate-x-1/2" />
       <div className="relative mx-auto w-full max-w-4xl">
         <section
-          className={`theme-panel rounded-2xl p-6 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8 ${isRtl ? "text-right" : "text-left"}`}
+          className={`app-section motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8 ${isRtl ? "text-right" : "text-left"}`}
         >
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">{t("speak_mode")}</p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{t("speak_submode_title")}</h1>
-          <p className="mt-2 text-sm text-slate-600">{t("speak_submode_hint")}</p>
+          <SectionHeader
+            as="h1"
+            align={isRtl ? "right" : "left"}
+            kicker={t("speak_mode")}
+            title={t("speak_submode_title")}
+            description={t("speak_submode_hint")}
+          />
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             {SUB_MODE_OPTIONS.map((option) => (
@@ -66,7 +71,7 @@ export default function SpeakModePage() {
                 key={option.key}
                 type="button"
                 onClick={() => setSelectedSubMode(option.key)}
-                className={`choice-card w-full rounded-2xl p-6 shadow-sm transition sm:p-7 ${selectedSubMode === option.key ? "choice-card-selected" : ""} ${isRtl ? "text-right" : "text-left"}`}
+                className={`choice-card focus-ring w-full rounded-2xl p-6 shadow-sm sm:p-7 ${selectedSubMode === option.key ? "choice-card-selected" : ""} ${isRtl ? "text-right" : "text-left"}`}
                 aria-pressed={selectedSubMode === option.key}
               >
                 <div className="flex items-start gap-3">
@@ -74,8 +79,8 @@ export default function SpeakModePage() {
                     {option.icon}
                   </span>
                   <div>
-                    <h2 className="text-xl font-semibold text-slate-900">{t(option.titleKey)}</h2>
-                    <p className="mt-1 text-sm text-slate-600">{t(option.subtitleKey)}</p>
+                    <h2 className="text-xl font-semibold text-[color:var(--text-strong)]">{t(option.titleKey)}</h2>
+                    <p className="app-muted mt-1 text-sm">{t(option.subtitleKey)}</p>
                   </div>
                 </div>
               </button>
@@ -86,14 +91,14 @@ export default function SpeakModePage() {
             <button
               type="button"
               onClick={() => router.push("/mode")}
-              className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
+              className="btn-outline focus-ring px-4 py-2.5 text-sm"
             >
               {t("back")}
             </button>
             <button
               type="button"
               onClick={handleContinue}
-              className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
+              className="btn-glow focus-ring px-4 py-2.5 text-sm"
             >
               {t("continue_to_scenarios")}
             </button>

@@ -7,6 +7,7 @@ import LockedLearningVideosState from "@/app/components/learning-videos/LockedLe
 import StudyPlanCard from "@/app/components/learning-videos/StudyPlanCard";
 import VideoRecommendationCard from "@/app/components/learning-videos/VideoRecommendationCard";
 import WhyRecommendedCard from "@/app/components/learning-videos/WhyRecommendedCard";
+import SectionHeader from "@/app/components/ui/SectionHeader";
 import { useLanguage } from "@/components/LanguageProvider";
 import { fetchLearningVideosRecommendations } from "@/lib/learningVideosClient";
 import {
@@ -35,7 +36,7 @@ function toLearningLanguage(value: string): LearningVideoLanguage {
 
 function LoadingSkeleton() {
   return (
-    <section className="theme-panel rounded-2xl p-5 sm:p-6" aria-live="polite" aria-busy="true">
+    <section className="app-section" aria-live="polite" aria-busy="true">
       <div className="h-5 w-40 animate-pulse rounded bg-slate-200/70" />
       <div className="mt-3 h-4 w-64 animate-pulse rounded bg-slate-200/70" />
       <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -158,9 +159,9 @@ export default function LearningVideosPage() {
   }, [unlockedResult, selectedTopic, sortMode]);
 
   return (
-    <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+    <main className="app-page theme-page">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
-      <div className={`relative mx-auto flex w-full max-w-5xl flex-col gap-5 ${isRtl ? "text-right" : "text-left"}`}>
+      <div className={`app-shell app-shell-lg ${isRtl ? "text-right" : "text-left"}`}>
         {loadState === "checking" || loadState === "loading" ? (
           <>
             <LoadingSkeleton />
@@ -171,12 +172,12 @@ export default function LearningVideosPage() {
         {loadState === "locked" ? <LockedLearningVideosState isRtl={isRtl} /> : null}
 
         {loadState === "error" ? (
-          <section className="theme-panel rounded-2xl p-6 sm:p-7">
-            <p className="text-sm text-slate-700">{errorMessage}</p>
+          <section className="app-section sm:p-7">
+            <p className="app-body app-muted text-sm">{errorMessage}</p>
             <button
               type="button"
               onClick={() => void loadRecommendations()}
-              className="btn-glow mt-4 rounded-xl px-4 py-2.5 text-sm font-semibold"
+              className="btn-glow focus-ring mt-4 px-4 py-2.5 text-sm"
             >
               Retry
             </button>
@@ -189,13 +190,20 @@ export default function LearningVideosPage() {
               language={unlockedResult.profile.selectedLanguage}
               cefrLevel={unlockedResult.profile.cefrLevel}
               confidence={unlockedResult.profile.confidence}
+              isRtl={isRtl}
             />
 
-            <section className="theme-panel rounded-2xl p-5 sm:p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-cyan-700">Filters</h2>
+            <section className="app-section">
+              <SectionHeader
+                as="h2"
+                align={isRtl ? "right" : "left"}
+                kicker="Explore"
+                title="Filters"
+                description="Adjust topic and ordering to refine your recommendations."
+              />
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Topic</p>
+                  <p className="app-caption text-xs font-semibold uppercase tracking-[0.12em]">Topic</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {topicOptions.map((topic) => {
                       const active = selectedTopic === topic;
@@ -205,7 +213,7 @@ export default function LearningVideosPage() {
                           type="button"
                           onClick={() => setSelectedTopic(topic)}
                           aria-pressed={active}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${active ? "btn-glow" : "btn-outline"}`}
+                          className={`app-chip app-interactive focus-ring ${active ? "app-chip-active" : ""}`}
                         >
                           {topic}
                         </button>
@@ -214,7 +222,7 @@ export default function LearningVideosPage() {
                   </div>
                 </div>
                 <div>
-                  <label htmlFor="learning-video-sort" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  <label htmlFor="learning-video-sort" className="app-caption text-xs font-semibold uppercase tracking-[0.12em]">
                     Sort
                   </label>
                   <select
@@ -222,14 +230,14 @@ export default function LearningVideosPage() {
                     aria-label="Sort recommendation videos"
                     value={sortMode}
                     onChange={(event) => setSortMode(event.target.value === "newest" ? "newest" : "relevance")}
-                    className="theme-panel-soft mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                    className="app-select mt-2"
                   >
                     <option value="relevance">Relevance</option>
                     <option value="newest">Newest</option>
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="learning-video-level-override" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  <label htmlFor="learning-video-level-override" className="app-caption text-xs font-semibold uppercase tracking-[0.12em]">
                     Level override
                   </label>
                   <select
@@ -237,7 +245,7 @@ export default function LearningVideosPage() {
                     aria-label="Level override unavailable"
                     disabled
                     value={unlockedResult.profile.cefrLevel}
-                    className="theme-panel-soft mt-2 w-full cursor-not-allowed rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-500 opacity-70"
+                    className="app-select mt-2 cursor-not-allowed opacity-70"
                   >
                     <option value={unlockedResult.profile.cefrLevel}>
                       Placement level ({unlockedResult.profile.cefrLevel})
@@ -247,21 +255,25 @@ export default function LearningVideosPage() {
               </div>
             </section>
 
-            <section className="theme-panel rounded-2xl p-5 sm:p-6">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-cyan-700">
-                  Recommended For Your Level
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => void loadRecommendations()}
-                  className="btn-outline rounded-xl px-3 py-1.5 text-xs font-semibold"
-                >
-                  Refresh
-                </button>
-              </div>
+            <section className="app-section">
+              <SectionHeader
+                as="h2"
+                align={isRtl ? "right" : "left"}
+                kicker="Recommendations"
+                title="Recommended for your level"
+                description="Video picks tuned to your CEFR profile and recent placement signals."
+                actions={
+                  <button
+                    type="button"
+                    onClick={() => void loadRecommendations()}
+                    className="btn-outline focus-ring px-3 py-1.5 text-xs"
+                  >
+                    Refresh
+                  </button>
+                }
+              />
               {displayedVideos.length === 0 ? (
-                <div className="theme-panel-soft mt-4 rounded-xl p-4 text-sm text-slate-700">
+                <div className="app-section-soft app-body app-muted mt-4 text-sm">
                   No videos found yet for this filter. Try reset filters or retry.
                 </div>
               ) : (
@@ -286,10 +298,10 @@ export default function LearningVideosPage() {
             />
 
             {placementMeta ? (
-              <section className="theme-panel rounded-2xl p-5 text-sm text-slate-700 sm:p-6">
-                <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-cyan-700">Placement Context</h2>
-                <p className="mt-2">
-                  Cycles completed: <span className="font-semibold text-slate-900">{placementMeta.summary.cyclesCompleted}</span>
+              <section className="app-section text-sm">
+                <h2 className="app-kicker">Placement Context</h2>
+                <p className="app-body app-muted mt-2">
+                  Cycles completed: <span className="font-semibold text-[color:var(--text-strong)]">{placementMeta.summary.cyclesCompleted}</span>
                 </p>
               </section>
             ) : null}

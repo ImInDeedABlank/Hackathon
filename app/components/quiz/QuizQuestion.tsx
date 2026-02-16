@@ -36,13 +36,13 @@ export default function QuizQuestion({
   const continueLabel = isTransitioning ? "Checking..." : isLastQuestion ? "Finish Quiz" : "Continue";
 
   return (
-    <section className={`theme-panel rounded-2xl p-5 backdrop-blur motion-safe:animate-[card-enter_420ms_ease-out_both] sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
-      <p className="theme-kicker text-xs font-semibold uppercase tracking-[0.14em]">
+    <section className={`app-section motion-safe:animate-[card-enter_420ms_ease-out_both] ${isRtl ? "text-right" : "text-left"}`}>
+      <p className="app-kicker">
         Question {questionNumber} of {totalQuestions}
       </p>
       <h2
         dir={questionTextDir}
-        className={`mt-2 text-xl font-semibold text-slate-900 sm:text-2xl ${questionTextDir === "rtl" ? "text-right" : "text-left"}`}
+        className={`app-title-md mt-2 ${questionTextDir === "rtl" ? "text-right" : "text-left"}`}
       >
         {question.prompt}
       </h2>
@@ -50,10 +50,12 @@ export default function QuizQuestion({
       {feedbackState !== "idle" ? (
         <p
           dir={questionTextDir}
+          role="status"
+          aria-live="polite"
           className={`mt-4 rounded-xl border px-3 py-2 text-sm ${
             feedbackState === "correct"
-              ? "border-emerald-400/70 bg-emerald-500/12 text-slate-900"
-              : "border-rose-400/70 bg-rose-500/12 text-slate-900"
+              ? "border-emerald-400/70 bg-emerald-500/12 text-[color:var(--text-strong)]"
+              : "border-rose-400/70 bg-rose-500/12 text-[color:var(--text-strong)]"
           }`}
         >
           <span className="font-semibold">{feedbackState === "correct" ? "Correct." : "Not quite."}</span>{" "}
@@ -80,7 +82,7 @@ export default function QuizQuestion({
           type="button"
           onClick={onContinue}
           disabled={!canContinue}
-          className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2"
+          className="btn-glow focus-ring px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-55"
         >
           {continueLabel}
         </button>

@@ -37,19 +37,19 @@ export default function QuizResults({
   const message = getPerformanceMessage(percentage);
 
   return (
-    <section className={`theme-panel rounded-2xl p-6 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8 ${isRtl ? "text-right" : "text-left"}`}>
-      <p className="theme-kicker text-xs font-semibold uppercase tracking-[0.14em]">Quiz Complete</p>
-      <h2 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Your Results</h2>
-      <p className="mt-2 text-sm text-slate-600 sm:text-base">{message}</p>
+    <section className={`app-section motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8 ${isRtl ? "text-right" : "text-left"}`}>
+      <p className="app-kicker">Quiz Complete</p>
+      <h2 className="app-title-lg mt-2">Your Results</h2>
+      <p className="app-body app-muted mt-2 text-sm">{message}</p>
 
-      <div className="theme-panel-soft mt-5 rounded-xl p-4 sm:p-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">Score</p>
-        <p className="mt-2 text-3xl font-semibold text-slate-900 sm:text-4xl">
+      <div className="app-section-soft mt-5 sm:p-5">
+        <p className="app-caption text-xs font-semibold uppercase tracking-[0.14em]">Score</p>
+        <p className="mt-2 text-3xl font-semibold text-[color:var(--text-strong)] sm:text-4xl">
           {score}/{total}
         </p>
-        <p className="mt-1 text-sm font-medium text-slate-700">{percentage}% correct</p>
+        <p className="app-muted mt-1 text-sm font-medium">{percentage}% correct</p>
         {showCelebrationState ? (
-          <p className="mt-3 rounded-lg border border-emerald-400/65 bg-emerald-500/12 px-3 py-2 text-sm text-slate-900">
+          <p className="mt-3 rounded-lg border border-emerald-400/65 bg-emerald-500/12 px-3 py-2 text-sm text-[color:var(--text-strong)]">
             Strong performance. Celebration unlocked.
           </p>
         ) : null}
@@ -59,13 +59,13 @@ export default function QuizResults({
         <button
           type="button"
           onClick={onRetry}
-          className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2"
+          className="btn-outline focus-ring px-4 py-2.5 text-sm"
         >
           Retry Quiz
         </button>
         <Link
           href="/"
-          className="btn-glow inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2"
+          className="btn-glow focus-ring px-4 py-2.5 text-sm"
         >
           Back Home
         </Link>

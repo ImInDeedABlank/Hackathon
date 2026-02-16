@@ -3,7 +3,7 @@ import LandingHero from "@/app/components/landing/LandingHero";
 
 export default function MainPage() {
   return (
-    <main className="theme-page relative min-h-screen overflow-hidden px-5 py-10 sm:px-8 sm:py-14">
+    <main className="app-page theme-page">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
       <div className="theme-top-fade pointer-events-none absolute inset-x-0 top-0 h-72" />
       <div className="theme-orb-a pointer-events-none absolute left-[-5rem] top-24 h-44 w-44 rounded-full blur-3xl motion-safe:animate-[float_16s_ease-in-out_infinite]" />
@@ -11,7 +11,7 @@ export default function MainPage() {
       <div className="pointer-events-none absolute inset-0 opacity-50">
         <div className="radial-grid h-full w-full" />
       </div>
-      <div className="relative mx-auto flex min-h-[80vh] w-full max-w-6xl flex-col items-center justify-center">
+      <div className="relative mx-auto flex min-h-[78vh] w-full max-w-6xl flex-col justify-center gap-10">
         <LandingHero />
         <LandingCards />
       </div>

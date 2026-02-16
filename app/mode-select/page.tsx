@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/LanguageProvider";
 import ModeCard from "@/app/components/ModeCard";
+import SectionHeader from "@/app/components/ui/SectionHeader";
 import { STORAGE_KEYS, readString, writeString } from "@/lib/placementStorage";
 
 type ModeOption = {
@@ -49,14 +50,18 @@ export default function ModeSelectPage() {
   const isRtl = lang === "ar";
 
   return (
-    <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+    <main className="app-page theme-page">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
       <div className="theme-top-fade pointer-events-none absolute left-1/2 top-0 h-56 w-[40rem] -translate-x-1/2" />
       <div className="relative mx-auto w-full max-w-4xl">
-        <section className={`theme-panel rounded-2xl p-6 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8 ${isRtl ? "text-right" : "text-left"}`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Practice Setup</p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{t("mode_title")}</h1>
-          <p className="mt-2 text-sm text-slate-600">{t("choose_mode_hint")}</p>
+        <section className={`app-section motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8 ${isRtl ? "text-right" : "text-left"}`}>
+          <SectionHeader
+            as="h1"
+            align={isRtl ? "right" : "left"}
+            kicker="Practice Setup"
+            title={t("mode_title")}
+            description={t("choose_mode_hint")}
+          />
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             {MODE_OPTIONS.map((mode) => (
@@ -76,7 +81,7 @@ export default function ModeSelectPage() {
               type="button"
               onClick={handleContinue}
               disabled={!selectedMode}
-              className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-glow focus-ring px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
               {selectedMode === "Speak" ? t("continue") : t("continue_to_scenarios")}
             </button>

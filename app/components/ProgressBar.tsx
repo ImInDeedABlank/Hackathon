@@ -12,9 +12,9 @@ export default function ProgressBar({ current, total, label }: ProgressBarProps)
 
   return (
     <div className="w-full space-y-2">
-      <div className="theme-muted flex items-center justify-between text-xs font-medium">
+      <div className="app-muted flex items-center justify-between text-xs font-medium">
         <span>{label ?? "Progress"}</span>
-        <span>{percentage}%</span>
+        <span className="font-semibold text-[color:var(--text-strong)]">{percentage}%</span>
       </div>
       <div
         aria-label={label ?? "Progress"}
@@ -25,7 +25,7 @@ export default function ProgressBar({ current, total, label }: ProgressBarProps)
         className="theme-progress-track relative h-3 w-full overflow-hidden rounded-full"
       >
         <div
-          className="relative h-full rounded-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 transition-[width] duration-500 ease-out"
+          className="relative h-full rounded-full bg-[linear-gradient(90deg,var(--button-start)_0%,color-mix(in_srgb,var(--accent)_68%,white_4%)_55%,var(--button-end)_100%)] transition-[width] duration-500 ease-out"
           style={{ width: `${rawPercentage}%` }}
         >
           <div className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-r from-white/25 via-white/5 to-white/20" />

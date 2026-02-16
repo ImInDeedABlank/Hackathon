@@ -18,8 +18,8 @@ function formatPublishedAt(value: string | undefined): string | null {
 export default function VideoRecommendationCard({ video }: VideoRecommendationCardProps) {
   const published = formatPublishedAt(video.publishedAt);
   return (
-    <article className="theme-panel rounded-2xl p-3 sm:p-4">
-      <div className="theme-panel-soft overflow-hidden rounded-xl">
+    <article className="app-section app-interactive motion-lift p-3 sm:p-4">
+      <div className="app-section-soft overflow-hidden rounded-xl p-0">
         <div className="aspect-video w-full">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -32,25 +32,25 @@ export default function VideoRecommendationCard({ video }: VideoRecommendationCa
         </div>
       </div>
       <div className="mt-3">
-        <p className="line-clamp-2 text-sm font-semibold text-slate-900">{video.title}</p>
-        <p className="mt-1 text-xs text-slate-600">{video.channelTitle}</p>
+        <p className="line-clamp-2 text-sm font-semibold text-[color:var(--text-strong)]">{video.title}</p>
+        <p className="app-muted mt-1 text-xs">{video.channelTitle}</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {video.levelTag ? (
-            <span className="theme-panel-soft rounded-full px-2.5 py-1 text-[11px] font-semibold text-slate-800">
+            <span className="app-chip">
               {video.levelTag}
             </span>
           ) : null}
           {video.topicTag ? (
-            <span className="theme-panel-soft rounded-full px-2.5 py-1 text-[11px] text-slate-700">
+            <span className="app-chip">
               {video.topicTag}
             </span>
           ) : null}
           {published ? (
-            <span className="theme-panel-soft rounded-full px-2.5 py-1 text-[11px] text-slate-700">{published}</span>
+            <span className="app-chip">{published}</span>
           ) : null}
         </div>
         {video.rationale ? (
-          <p className="mt-2 line-clamp-3 text-xs text-slate-600">{video.rationale}</p>
+          <p className="app-muted mt-2 line-clamp-3 text-xs">{video.rationale}</p>
         ) : null}
       </div>
       <div className="mt-3">
@@ -59,7 +59,7 @@ export default function VideoRecommendationCard({ video }: VideoRecommendationCa
           target="_blank"
           rel="noreferrer noopener"
           aria-label={`Watch ${video.title} on YouTube`}
-          className="btn-outline inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold"
+          className="btn-outline focus-ring px-3 py-2 text-xs"
         >
           Watch on YouTube
         </a>

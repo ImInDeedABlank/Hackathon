@@ -15,10 +15,10 @@ export default function QuizProgress({ current, total }: QuizProgressProps) {
   const percentCompleted = Math.round((current / safeTotal) * 100);
 
   return (
-    <section className={`theme-panel-soft rounded-2xl p-4 sm:p-5 ${isRtl ? "text-right" : "text-left"}`}>
+    <section className={`app-section-soft ${isRtl ? "text-right" : "text-left"}`}>
       <div className="flex items-center justify-between gap-3 text-xs font-medium">
-        <p className="theme-muted">Quiz Progress</p>
-        <p className="text-slate-900">{percentCompleted}% completed</p>
+        <p className="app-muted">Quiz Progress</p>
+        <p className="font-semibold text-[color:var(--text-strong)]">{percentCompleted}% complete</p>
       </div>
       <div className="mt-3">
         <ProgressBar current={current} total={total} label="Vocabulary quiz progress" />

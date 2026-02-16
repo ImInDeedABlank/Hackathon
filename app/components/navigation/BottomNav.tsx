@@ -21,7 +21,7 @@ const SIDE_ITEMS: SideNavItem[] = [
 function SideLink({ href, label, icon, active, locked }: SideNavItem & { active: boolean; locked?: boolean }) {
   const baseContent = (
     <>
-      <span aria-hidden="true" className="inline-flex h-5 w-5 items-center justify-center text-slate-700">
+      <span aria-hidden="true" className="app-bottom-nav-icon inline-flex h-5 w-5 items-center justify-center">
         {icon === "quiz" ? (
           <svg viewBox="0 0 20 20" fill="none" className="h-[18px] w-[18px]">
             <rect x="3.5" y="2.8" width="10.5" height="14.4" rx="1.8" stroke="currentColor" strokeWidth="1.5" />
@@ -35,11 +35,9 @@ function SideLink({ href, label, icon, active, locked }: SideNavItem & { active:
           </svg>
         )}
       </span>
-      <span className="text-[11px] font-semibold tracking-[0.08em] text-slate-900 sm:text-xs">
-        {label}
-      </span>
+      <span className="app-bottom-nav-label">{label}</span>
       {locked ? (
-        <span aria-hidden="true" className="text-[10px] font-semibold text-slate-500">
+        <span aria-hidden="true" className="app-caption text-[10px] font-semibold">
           Locked
         </span>
       ) : null}
@@ -50,6 +48,7 @@ function SideLink({ href, label, icon, active, locked }: SideNavItem & { active:
     return (
       <span
         aria-disabled="true"
+        aria-label={`${label} locked`}
         className={`app-bottom-nav-link app-bottom-nav-link-locked ${active ? "app-bottom-nav-link-active" : ""}`}
         title="Complete placement to unlock Learning Videos"
       >
@@ -62,6 +61,7 @@ function SideLink({ href, label, icon, active, locked }: SideNavItem & { active:
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
+      aria-label={label}
       className={`app-bottom-nav-link ${active ? "app-bottom-nav-link-active" : ""}`}
     >
       {baseContent}

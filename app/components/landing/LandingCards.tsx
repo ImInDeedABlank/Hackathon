@@ -29,13 +29,13 @@ export default function LandingCards() {
         {journeySteps.map((item, index) => (
           <article
             key={item.title}
-            className="group relative overflow-hidden rounded-2xl border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur transition duration-300 hover:-translate-y-1 hover:shadow-md motion-safe:animate-[fade-up_700ms_ease-out_both]"
+            className="app-section app-surface-lift app-interactive motion-lift group relative overflow-hidden motion-safe:animate-[fade-up_700ms_ease-out_both]"
             style={{ animationDelay: `${index * 140}ms` }}
           >
             <div className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-cyan-200/40 blur-2xl transition group-hover:bg-cyan-200/60" />
-            <p className="text-xs font-semibold tracking-[0.16em] text-cyan-700">{item.step}</p>
-            <h2 className="mt-2 text-lg font-semibold text-slate-900">{item.title}</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600">{item.text}</p>
+            <p className="app-kicker">{item.step}</p>
+            <h2 className="app-title-md mt-2">{item.title}</h2>
+            <p className="app-body app-muted mt-3 text-sm">{item.text}</p>
           </article>
         ))}
       </div>

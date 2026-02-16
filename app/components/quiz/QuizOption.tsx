@@ -33,7 +33,7 @@ export default function QuizOption({
       aria-pressed={selected}
       dir={textDir}
       onClick={() => onSelect(option.id)}
-      className={`quiz-option group w-full rounded-xl px-4 py-3 text-sm transition duration-200 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2 sm:text-base ${
+      className={`quiz-option app-interactive focus-ring group w-full rounded-xl px-4 py-3 text-sm sm:text-base ${
         selected ? "quiz-option-selected" : "hover:-translate-y-0.5"
       } ${feedbackClass} ${textDir === "rtl" ? "text-right" : "text-left"} disabled:cursor-not-allowed disabled:opacity-80`}
     >
@@ -44,7 +44,7 @@ export default function QuizOption({
             selected ? "quiz-option-indicator-selected" : ""
           }`}
         >
-          *
+          {selected ? "*" : ""}
         </span>
       </span>
     </button>

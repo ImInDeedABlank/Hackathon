@@ -196,10 +196,10 @@ export default function VocabQuizPage() {
   };
 
   return (
-    <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+    <main className="app-page theme-page">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
       <div className="theme-top-fade pointer-events-none absolute left-1/2 top-0 h-56 w-[40rem] -translate-x-1/2" />
-      <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-5">
+      <div className="app-shell app-shell-sm">
         <QuizHeader
           title={copy.title}
           subtitle={copy.subtitle}
@@ -208,9 +208,9 @@ export default function VocabQuizPage() {
         />
 
         {totalQuestions === 0 ? (
-          <section className="theme-panel rounded-2xl p-6 text-center sm:p-8">
-            <h2 className="text-xl font-semibold text-slate-900">Quiz content unavailable</h2>
-            <p className="mt-2 text-sm text-slate-600">No questions were found for the selected language pack.</p>
+          <section className="app-section text-center sm:p-8">
+            <h2 className="app-title-md">Quiz content unavailable</h2>
+            <p className="app-body app-muted mt-2 text-sm">No questions were found for the selected language pack.</p>
           </section>
         ) : isFinished ? (
           <QuizResults

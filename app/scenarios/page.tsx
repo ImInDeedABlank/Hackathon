@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/LanguageProvider";
 import ScenarioCard from "@/app/components/ScenarioCard";
+import SectionHeader from "@/app/components/ui/SectionHeader";
 import {
   STORAGE_KEYS,
   readPlacementResult,
@@ -100,17 +101,19 @@ export default function ScenariosPage() {
   const isRtl = lang === "ar";
 
   return (
-    <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+    <main className="app-page theme-page">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
       <div className="theme-top-fade pointer-events-none absolute left-1/2 top-0 h-56 w-[40rem] -translate-x-1/2" />
-      <section className={`theme-panel relative mx-auto w-full max-w-5xl rounded-[2rem] p-6 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8 ${isRtl ? "text-right" : "text-left"}`}>
-        <p className="theme-kicker text-[11px] font-semibold uppercase tracking-[0.2em]">Session Setup</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">{t("scenarios_title")}</h1>
-        <p className="mt-3 max-w-2xl text-sm text-slate-600 sm:text-base">
-          Pick one real-life context to start your guided practice session.
-        </p>
-        <p className="mt-2 text-sm text-slate-600">
-          {t("mode_title")}: <span className="font-semibold text-slate-900">{modeLabel}</span>
+      <section className={`app-section relative mx-auto w-full max-w-5xl motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-8 ${isRtl ? "text-right" : "text-left"}`}>
+        <SectionHeader
+          as="h1"
+          align={isRtl ? "right" : "left"}
+          kicker="Session Setup"
+          title={t("scenarios_title")}
+          description="Choose one real-life context to start your guided practice session."
+        />
+        <p className="app-body app-muted mt-2 text-sm">
+          {t("mode_title")}: <span className="font-semibold text-[color:var(--text-strong)]">{modeLabel}</span>
         </p>
 
         <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

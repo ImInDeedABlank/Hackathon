@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/LanguageProvider";
 import ProgressBar from "@/app/components/ProgressBar";
+import SectionHeader from "@/app/components/ui/SectionHeader";
 import type { PlacementResult } from "@/lib/placement";
 import {
   clearPlacementStorage,
@@ -24,11 +25,11 @@ function ResultCard({
 }) {
   return (
     <section
-      className="theme-panel rounded-2xl p-5 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-6"
+      className="app-section motion-safe:animate-[fade-up_620ms_ease-out_both]"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-cyan-700">{title}</h2>
-      <div className="mt-3 text-sm text-slate-700">{children}</div>
+      <h2 className="app-kicker">{title}</h2>
+      <div className="app-body app-muted mt-3 text-sm">{children}</div>
     </section>
   );
 }
@@ -52,14 +53,14 @@ export default function ResultsPage() {
 
   if (!result) {
     return (
-      <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
-        <div className={`theme-panel mx-auto w-full max-w-2xl rounded-2xl p-6 backdrop-blur ${isRtl ? "text-right" : "text-center"}`}>
-          <h1 className="text-2xl font-semibold text-slate-900">{t("results_title")}</h1>
-          <p className="mt-2 text-sm text-slate-600">Complete the placement flow first.</p>
+      <main className="app-page theme-page">
+        <div className={`app-section mx-auto w-full max-w-2xl ${isRtl ? "text-right" : "text-center"}`}>
+          <h1 className="app-title-lg">{t("results_title")}</h1>
+          <p className="app-body app-muted mt-2 text-sm">Complete the placement flow first.</p>
           <button
             type="button"
             onClick={() => router.push("/placement")}
-            className="btn-glow mt-5 rounded-xl px-4 py-2.5 text-sm font-semibold"
+            className="btn-glow focus-ring mt-5 px-4 py-2.5 text-sm"
           >
             Placement
           </button>
@@ -69,25 +70,29 @@ export default function ResultsPage() {
   }
 
   return (
-    <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+    <main className="app-page theme-page">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
-      <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-5">
-        <header className={`theme-panel space-y-3 rounded-2xl p-5 backdrop-blur motion-safe:animate-[fade-up_620ms_ease-out_both] sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Placement Step 3 of 3</p>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{t("results_title")}</h1>
+      <div className="app-shell app-shell-sm">
+        <header className={`app-section space-y-3 motion-safe:animate-[fade-up_620ms_ease-out_both] ${isRtl ? "text-right" : "text-left"}`}>
+          <SectionHeader
+            as="h1"
+            align={isRtl ? "right" : "left"}
+            kicker="Placement Step 3 of 3"
+            title={t("results_title")}
+          />
           <ProgressBar current={3} total={3} label="Placement progress" />
         </header>
 
         <ResultCard title="Level Summary" delay={80}>
           <div className="grid gap-2 sm:grid-cols-3">
             <p>
-              <span className="font-medium">Level:</span> {result.level}
+              <span className="font-semibold text-[color:var(--text-strong)]">Level:</span> {result.level}
             </p>
             <p>
-              <span className="font-medium">CEFR hint:</span> {result.cefr_hint}
+              <span className="font-semibold text-[color:var(--text-strong)]">CEFR hint:</span> {result.cefr_hint}
             </p>
             <p>
-              <span className="font-medium">Confidence:</span> {result.confidence}%
+              <span className="font-semibold text-[color:var(--text-strong)]">Confidence:</span> {result.confidence}%
             </p>
           </div>
           <div className="mt-4">
@@ -112,10 +117,10 @@ export default function ResultsPage() {
         </ResultCard>
 
         <ResultCard title="Feedback" delay={280}>
-          <p className="theme-panel-soft rounded-xl p-3 text-slate-700">{result.feedback.corrected_version}</p>
+          <p className="app-section-soft p-3">{result.feedback.corrected_version}</p>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <div>
-              <p className="font-medium text-slate-900">Key mistakes</p>
+              <p className="font-semibold text-[color:var(--text-strong)]">Key mistakes</p>
               <ul className="mt-1 list-disc space-y-1 ps-5">
                 {result.feedback.key_mistakes.map((mistake) => (
                   <li key={mistake}>{mistake}</li>
@@ -123,7 +128,7 @@ export default function ResultsPage() {
               </ul>
             </div>
             <div>
-              <p className="font-medium text-slate-900">Natural alternatives</p>
+              <p className="font-semibold text-[color:var(--text-strong)]">Natural alternatives</p>
               <ul className="mt-1 list-disc space-y-1 ps-5">
                 {result.feedback.natural_alternatives.map((alternative) => (
                   <li key={alternative}>{alternative}</li>
@@ -131,16 +136,16 @@ export default function ResultsPage() {
               </ul>
             </div>
           </div>
-          <p className="mt-3 text-sm text-slate-700">
-            <span className="font-medium text-slate-900">Grammar note:</span> {result.feedback.grammar_note}
+          <p className="app-body app-muted mt-3 text-sm">
+            <span className="font-semibold text-[color:var(--text-strong)]">Grammar note:</span> {result.feedback.grammar_note}
           </p>
         </ResultCard>
 
         <ResultCard title="Recommended Next Step" delay={340}>
           <p>
-            <span className="font-medium">{t("mode_title")}:</span> {result.recommended_mode}
+            <span className="font-semibold text-[color:var(--text-strong)]">{t("mode_title")}:</span> {result.recommended_mode}
           </p>
-          <p className="mt-2 font-medium text-slate-900">{t("scenarios_title")}</p>
+          <p className="mt-2 font-semibold text-[color:var(--text-strong)]">{t("scenarios_title")}</p>
           <ul className="mt-1 list-disc space-y-1 ps-5">
             {result.recommended_scenarios.map((scenario) => (
               <li key={scenario}>{scenario}</li>
@@ -157,10 +162,10 @@ export default function ResultsPage() {
             </ul>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <p>
-                <span className="font-medium">Cycles completed:</span> {meta.summary.cyclesCompleted}
+                <span className="font-semibold text-[color:var(--text-strong)]">Cycles completed:</span> {meta.summary.cyclesCompleted}
               </p>
               <p>
-                <span className="font-medium">Skills:</span> Vocab {meta.summary.skillScores.vocab}, Grammar{" "}
+                <span className="font-semibold text-[color:var(--text-strong)]">Skills:</span> Vocab {meta.summary.skillScores.vocab}, Grammar{" "}
                 {meta.summary.skillScores.grammar}, Reading {meta.summary.skillScores.reading}, Writing{" "}
                 {meta.summary.skillScores.writing}
               </p>
@@ -172,14 +177,14 @@ export default function ResultsPage() {
           <button
             type="button"
             onClick={handleTryAgain}
-            className="btn-outline rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
+            className="btn-outline focus-ring px-4 py-2.5 text-sm"
           >
             {t("try_again")}
           </button>
           <button
             type="button"
             onClick={handleContinue}
-            className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5"
+            className="btn-glow focus-ring px-4 py-2.5 text-sm"
           >
             {t("continue")}
           </button>

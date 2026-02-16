@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/LanguageProvider";
 import ProgressBar from "@/app/components/ProgressBar";
+import SectionHeader from "@/app/components/ui/SectionHeader";
 import {
   defaultPlacementState,
   MAX_PLACEMENT_CYCLES,
@@ -93,6 +94,7 @@ export default function PlacementPage() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [uiLanguage, setUiLanguage] = useState<UILanguage>("en");
   const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>("English");
+  const isArabicTarget = targetLanguage === "Arabic";
   const [sessionId, setSessionId] = useState("");
   const [state, setState] = useState<PlacementState>(defaultPlacementState());
   const [interviewQuestions, setInterviewQuestions] = useState<[string, string, string]>(["", "", ""]);
@@ -226,46 +228,50 @@ export default function PlacementPage() {
   };
 
   return (
-    <main className="theme-page relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 sm:py-12">
+    <main className="app-page theme-page">
       <div className="theme-orb-overlay pointer-events-none absolute inset-0" />
-      <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-5">
-        <header className={`theme-panel rounded-2xl p-5 backdrop-blur sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">{copy.title}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{targetLanguage}</h1>
-          <p className="mt-1 text-sm text-slate-600">{copy.subtitle}</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="theme-panel-soft rounded-xl p-3">
-              <p className="text-xs text-slate-500">{copy.cycle}</p>
-              <p className="text-sm font-semibold text-slate-900">{state.cycle}/{MAX_PLACEMENT_CYCLES}</p>
+      <div className="app-shell app-shell-sm">
+        <header className={`app-section ${isRtl ? "text-right" : "text-left"}`}>
+          <SectionHeader
+            as="h1"
+            align={isRtl ? "right" : "left"}
+            kicker={copy.title}
+            title={targetLanguage}
+            description={copy.subtitle}
+          />
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="app-section-soft">
+              <p className="app-caption">{copy.cycle}</p>
+              <p className="mt-1 text-sm font-semibold text-[color:var(--text-strong)]">{state.cycle}/{MAX_PLACEMENT_CYCLES}</p>
             </div>
-            <div className="theme-panel-soft rounded-xl p-3">
-              <p className="text-xs text-slate-500">{copy.question}</p>
-              <p className="text-sm font-semibold text-slate-900">{state.questionIndex}/6</p>
+            <div className="app-section-soft">
+              <p className="app-caption">{copy.question}</p>
+              <p className="mt-1 text-sm font-semibold text-[color:var(--text-strong)]">{state.questionIndex}/6</p>
             </div>
-            <div className="theme-panel-soft rounded-xl p-3">
-              <p className="text-xs text-slate-500">{copy.stability}</p>
-              <p className="text-sm font-semibold text-slate-900">{state.stability}%</p>
+            <div className="app-section-soft">
+              <p className="app-caption">{copy.stability}</p>
+              <p className="mt-1 text-sm font-semibold text-[color:var(--text-strong)]">{state.stability}%</p>
             </div>
           </div>
-          <div className="mt-3">
+          <div className="mt-4">
             <ProgressBar current={state.confidence} total={100} label={copy.confidence} />
           </div>
         </header>
 
         {phase === "loading" ? (
-          <section className={`theme-panel rounded-2xl p-5 sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
-            <p className="text-sm text-slate-700">{copy.loading}</p>
+          <section className={`app-section ${isRtl ? "text-right" : "text-left"}`}>
+            <p className="app-body app-muted text-sm">{copy.loading}</p>
           </section>
         ) : null}
 
         {phase === "interview" ? (
-          <section className={`theme-panel rounded-2xl p-5 sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
-            <h2 className="text-lg font-semibold text-slate-900">{copy.interviewTitle}</h2>
-            <p className="mt-1 text-xs text-slate-500">{copy.interviewHint}</p>
+          <section className={`app-section ${isRtl ? "text-right" : "text-left"}`}>
+            <h2 className="app-title-md">{copy.interviewTitle}</h2>
+            <p className="app-caption mt-1">{copy.interviewHint}</p>
             <div className="mt-4 space-y-4">
               {interviewQuestions.map((prompt, index) => (
                 <div key={`interview-${index}`}>
-                  <p className="text-sm font-medium text-slate-800">{prompt}</p>
+                  <p className="text-sm font-medium text-[color:var(--text-strong)]">{prompt}</p>
                   <textarea
                     value={interviewAnswers[index]}
                     onChange={(event) =>
@@ -275,8 +281,9 @@ export default function PlacementPage() {
                         return next;
                       })
                     }
-                    className="mt-2 min-h-20 w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                    className={`app-textarea mt-2 ${isRtl ? "text-right" : "text-left"}`}
                     placeholder={copy.placeholder}
+                    aria-label={`Interview answer ${index + 1}`}
                   />
                 </div>
               ))}
@@ -286,7 +293,7 @@ export default function PlacementPage() {
                 type="button"
                 onClick={handleBeginTest}
                 disabled={!interviewReady || isBusy}
-                className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-glow focus-ring px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {copy.beginTest}
               </button>
@@ -295,11 +302,18 @@ export default function PlacementPage() {
         ) : null}
 
         {phase === "test" && question ? (
-          <section className={`theme-panel rounded-2xl p-5 sm:p-6 ${isRtl ? "text-right" : "text-left"}`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">
-              {question.type} • {question.skill} • D{question.difficulty}
+          <section className={`app-section ${isRtl ? "text-right" : "text-left"}`}>
+            <p className="app-kicker">
+              {question.type} - {question.skill} - D{question.difficulty}
             </p>
-            <p className="mt-2 text-base font-medium text-slate-900">{question.prompt}</p>
+            <p
+              className={`mt-2 text-base font-medium text-[color:var(--text-strong)] ${
+                isArabicTarget ? "text-right" : "text-left"
+              }`}
+              dir={isArabicTarget ? "rtl" : "ltr"}
+            >
+              {question.prompt}
+            </p>
 
             <div className="mt-4">
               {question.type === "mcq" ? (
@@ -311,7 +325,7 @@ export default function PlacementPage() {
                         key={choice}
                         type="button"
                         onClick={() => setSelectedChoice(choice)}
-                        className={`quiz-option w-full rounded-xl px-4 py-3 text-sm transition ${selected ? "quiz-option-selected" : "hover:-translate-y-0.5"}`}
+                        className={`quiz-option focus-ring w-full rounded-xl px-4 py-3 text-sm ${selected ? "quiz-option-selected" : "hover:-translate-y-0.5"}`}
                       >
                         {choice}
                       </button>
@@ -322,21 +336,25 @@ export default function PlacementPage() {
                 <textarea
                   value={shortAnswer}
                   onChange={(event) => setShortAnswer(event.target.value)}
-                  className="min-h-24 w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                  className={`app-textarea ${isRtl ? "text-right" : "text-left"}`}
                   placeholder={copy.placeholder}
+                  dir={isArabicTarget ? "rtl" : "ltr"}
+                  aria-label="Write your answer"
                 />
               ) : (
                 <input
                   value={shortAnswer}
                   onChange={(event) => setShortAnswer(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white/95 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                  className={`app-input ${isRtl ? "text-right" : "text-left"}`}
                   placeholder={copy.placeholder}
+                  dir={isArabicTarget ? "rtl" : "ltr"}
+                  aria-label="Type your answer"
                 />
               )}
             </div>
 
             {question.type === "essay" ? (
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="app-caption mt-2">
                 {copy.essayHint} ({essayCount})
               </p>
             ) : null}
@@ -346,7 +364,7 @@ export default function PlacementPage() {
                 type="button"
                 onClick={handleSubmitAnswer}
                 disabled={!canSubmitQuestion}
-                className="btn-glow rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-glow focus-ring px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {copy.submit}
               </button>
@@ -355,18 +373,19 @@ export default function PlacementPage() {
         ) : null}
 
         {gradingNote || decisionNote ? (
-          <section className="theme-panel rounded-2xl p-4 sm:p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">{copy.grading}</p>
-            <p className="mt-1 text-sm text-slate-700">{gradingNote || "-"}</p>
-            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">{copy.decision}</p>
-            <p className="mt-1 text-sm text-slate-700">{decisionNote || "-"}</p>
+          <section className="app-section">
+            <p className="app-kicker">{copy.grading}</p>
+            <p className="app-body app-muted mt-1 text-sm">{gradingNote || "-"}</p>
+            <p className="app-kicker mt-4">{copy.decision}</p>
+            <p className="app-body app-muted mt-1 text-sm">{decisionNote || "-"}</p>
           </section>
         ) : null}
 
         {error ? (
-          <section className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</section>
+          <section className="rounded-xl border border-red-300/70 bg-red-500/12 px-4 py-3 text-sm text-red-800 dark:text-red-100">{error}</section>
         ) : null}
       </div>
     </main>
   );
 }
+
