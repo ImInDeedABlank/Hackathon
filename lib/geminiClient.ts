@@ -76,6 +76,41 @@ function truncateRaw(value: string): string {
   return value.length <= 2000 ? value : value.slice(0, 2000);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function computeBackoff(attempt: number): number {
+  const base = 500;
+  const cap = 15000;
+  const exp = Math.min(cap, base * 2 ** attempt);
+  const jitter = Math.floor(Math.random() * 250);
+  return exp + jitter;
+}
+
+function parseRetryAfterDelayMs(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.round(seconds * 1000);
+  }
+
+  const asDate = Date.parse(trimmed);
+  if (Number.isNaN(asDate)) {
+    return null;
+  }
+
+  return Math.max(0, asDate - Date.now());
+}
+
 function parseErrorDetails(rawBody: string): { code: string | null; message: string | null } {
   try {
     const parsed = JSON.parse(rawBody) as {
@@ -138,7 +173,11 @@ function parseJsonFromText(text: string): { ok: true; value: unknown } | { ok: f
   return { ok: false, error: lastError ?? "Unknown JSON parse error" };
 }
 
-async function callGeminiTextOnce(options: GeminiRequestOptions, model: string): Promise<GeminiTextSuccess | GeminiFailure> {
+async function callGeminiTextOnce(
+  options: GeminiRequestOptions,
+  model: string,
+  retryOn429 = false,
+): Promise<GeminiTextSuccess | GeminiFailure> {
   const apiKey = process.env.GEMINI_API_KEY;
   const debug = initialDebug(apiKey, model);
   const prompt = buildPrompt(options.systemPrompt, options.userPrompt);
@@ -159,94 +198,114 @@ async function callGeminiTextOnce(options: GeminiRequestOptions, model: string):
 
   const url = `${endpointForModel(model)}?key=${encodeURIComponent(apiKey)}`;
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: options.temperature ?? 0.7,
-          maxOutputTokens: options.maxOutputTokens ?? 1024,
-          responseMimeType: "application/json",
+  const maxRetries = retryOn429 ? 5 : 0;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      }),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Network request failed.";
-    debug.parseError = message;
-    console.error(`[${options.routeTag}] Gemini fallback reason=network_error message="${message}"`);
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: options.temperature ?? 0.7,
+            maxOutputTokens: options.maxOutputTokens ?? 1024,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Network request failed.";
+      debug.parseError = message;
+      console.error(`[${options.routeTag}] Gemini fallback reason=network_error message="${message}"`);
+      return {
+        ok: false,
+        reason: "network_error",
+        error: message,
+        model,
+        debug,
+      };
+    }
+
+    debug.status = response.status;
+    console.info(`[${options.routeTag}] Gemini response status=${response.status} statusText=${response.statusText}`);
+
+    const rawBody = await response.text();
+    debug.rawSnippet = truncateRaw(rawBody);
+
+    if (!response.ok) {
+      const details = parseErrorDetails(rawBody);
+      const detailSuffix = details.code || details.message ? ` code=${details.code ?? "n/a"} message="${details.message ?? "n/a"}"` : "";
+      console.error(
+        `[${options.routeTag}] Gemini fallback reason=http_error status=${response.status} statusText=${response.statusText}${detailSuffix} raw="${debug.rawSnippet}"`,
+      );
+
+      if (response.status === 429 && attempt < maxRetries) {
+        const retryAfterMs = parseRetryAfterDelayMs(response.headers.get("retry-after"));
+        const delayMs = retryAfterMs ?? computeBackoff(attempt);
+        await sleep(delayMs);
+        continue;
+      }
+
+      return {
+        ok: false,
+        reason: "http_error",
+        error: details.message ?? `Gemini HTTP ${response.status} ${response.statusText}`,
+        model,
+        debug,
+      };
+    }
+
+    let data: unknown;
+    try {
+      data = JSON.parse(rawBody) as unknown;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to parse Gemini HTTP body as JSON.";
+      debug.parseError = message;
+      console.error(
+        `[${options.routeTag}] Gemini fallback reason=response_parse_error status=${response.status} parseError="${message}" raw="${debug.rawSnippet}"`,
+      );
+      return {
+        ok: false,
+        reason: "response_parse_error",
+        error: message,
+        model,
+        debug,
+      };
+    }
+
+    const candidateText = (data as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })?.candidates?.[0]?.content
+      ?.parts?.[0]?.text;
+    const text = typeof candidateText === "string" ? candidateText.trim() : "";
+
+    if (!text) {
+      console.error(
+        `[${options.routeTag}] Gemini fallback reason=empty_text status=${response.status} raw="${debug.rawSnippet}"`,
+      );
+      return {
+        ok: false,
+        reason: "empty_text",
+        error: "Gemini returned an empty candidate text.",
+        model,
+        debug,
+      };
+    }
+
     return {
-      ok: false,
-      reason: "network_error",
-      error: message,
-      model,
-      debug,
-    };
-  }
-
-  debug.status = response.status;
-  console.info(`[${options.routeTag}] Gemini response status=${response.status} statusText=${response.statusText}`);
-
-  const rawBody = await response.text();
-  debug.rawSnippet = truncateRaw(rawBody);
-
-  if (!response.ok) {
-    const details = parseErrorDetails(rawBody);
-    const detailSuffix = details.code || details.message ? ` code=${details.code ?? "n/a"} message="${details.message ?? "n/a"}"` : "";
-    console.error(
-      `[${options.routeTag}] Gemini fallback reason=http_error status=${response.status} statusText=${response.statusText}${detailSuffix} raw="${debug.rawSnippet}"`,
-    );
-    return {
-      ok: false,
-      reason: "http_error",
-      error: details.message ?? `Gemini HTTP ${response.status} ${response.statusText}`,
-      model,
-      debug,
-    };
-  }
-
-  let data: unknown;
-  try {
-    data = JSON.parse(rawBody) as unknown;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to parse Gemini HTTP body as JSON.";
-    debug.parseError = message;
-    console.error(
-      `[${options.routeTag}] Gemini fallback reason=response_parse_error status=${response.status} parseError="${message}" raw="${debug.rawSnippet}"`,
-    );
-    return {
-      ok: false,
-      reason: "response_parse_error",
-      error: message,
-      model,
-      debug,
-    };
-  }
-
-  const candidateText = (data as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })?.candidates?.[0]?.content
-    ?.parts?.[0]?.text;
-  const text = typeof candidateText === "string" ? candidateText.trim() : "";
-
-  if (!text) {
-    console.error(
-      `[${options.routeTag}] Gemini fallback reason=empty_text status=${response.status} raw="${debug.rawSnippet}"`,
-    );
-    return {
-      ok: false,
-      reason: "empty_text",
-      error: "Gemini returned an empty candidate text.",
+      ok: true,
+      text,
       model,
       debug,
     };
   }
 
   return {
-    ok: true,
-    text,
+    ok: false,
+    reason: "http_error",
+    error: "Gemini HTTP 429 Too Many Requests",
     model,
     debug,
   };
@@ -270,7 +329,7 @@ export async function callGeminiJson<T>(
   let textResult: GeminiTextSuccess | null = null;
 
   for (const model of models) {
-    const callResult = await callGeminiTextOnce(options, model);
+    const callResult = await callGeminiTextOnce(options, model, true);
     if (callResult.ok) {
       textResult = callResult;
       break;
@@ -337,7 +396,7 @@ export async function callGeminiJson<T>(
     };
 
     if (attempt < attempts) {
-      const retryResult = await callGeminiTextOnce(options, textResult.model);
+      const retryResult = await callGeminiTextOnce(options, textResult.model, true);
       if (!retryResult.ok) {
         return retryResult;
       }
