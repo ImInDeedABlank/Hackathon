@@ -72,7 +72,7 @@ function toTargetLanguage(value: string): TargetLanguage {
     : "English";
 }
 function toLevel(value: string): LearnerLevel {
-  return LEVELS.includes(value as LearnerLevel) ? (value as LearnerLevel) : "Beginner";
+  return LEVELS.includes(value as LearnerLevel) ? (value as LearnerLevel) : "Intermediate";
 }
 function toScenario(value: string): SupportedScenario {
   return SCENARIOS.includes(value as SupportedScenario)
@@ -519,7 +519,7 @@ export default function ChatPage() {
     setSpeechTranscript("");
 
     const placement = readPlacementResult();
-    const level = toLevel(readString("level", placement?.level ?? "Beginner"));
+    const level = toLevel(placement?.level ?? readString("level", "Intermediate"));
     const fallback: RepeatGenerateResponse = {
       sentence: fallbackRepeatSentence(targetLanguage, selectedScenario, level),
       difficulty: toRepeatDifficulty(level),
@@ -793,7 +793,7 @@ export default function ChatPage() {
       readString(STORAGE_KEYS.targetLanguage, readString("targetLanguage", "English")),
     );
     const placement = readPlacementResult();
-    const level = toLevel(readString("level", placement?.level ?? "Beginner"));
+    const level = toLevel(placement?.level ?? readString("level", "Intermediate"));
     const scenario = toScenario(
       readString(
         scenarioStorageKeyForMode(selectedMode),

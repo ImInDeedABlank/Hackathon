@@ -30,7 +30,7 @@ const SCENARIOS = ["Airport", "Ordering Food", "Job Interview", "Hotel Check-in"
 const DEFAULT_INPUT: ChatInput = {
   uiLanguage: "en",
   targetLanguage: "English",
-  level: "Beginner",
+  level: "Intermediate",
   scenario: "Ordering Food",
   messages: [],
 };

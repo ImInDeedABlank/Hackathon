@@ -155,7 +155,7 @@ export function normalizePlacementProfile(raw: LearningVideosRequestBody): Norma
   const explicitBand = hasPlacementObject ? toBand(placement.level) : null;
   const explicitCefr = hasPlacementObject ? toCefr(placement.cefrLevel ?? placement.cefr_hint) : null;
 
-  const level = explicitBand ?? (explicitCefr ? bandFromCefr(explicitCefr) : "Beginner");
+  const level = explicitBand ?? (explicitCefr ? bandFromCefr(explicitCefr) : "Intermediate");
   const cefrLevel = explicitCefr ?? cefrFromBand(level);
 
   const confidence =

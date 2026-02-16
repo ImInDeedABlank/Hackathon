@@ -22,7 +22,9 @@ export function normalizePlacementResult(raw: unknown): PlacementResult {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const feedback = source.feedback && typeof source.feedback === "object" ? (source.feedback as Record<string, unknown>) : {};
 
-  const level = source.level === "Intermediate" || source.level === "Advanced" ? source.level : "Beginner";
+  const level = source.level === "Beginner" || source.level === "Intermediate" || source.level === "Advanced"
+    ? source.level
+    : "Intermediate";
   const cefr =
     source.cefr_hint === "A1" ||
     source.cefr_hint === "A2" ||
@@ -30,7 +32,7 @@ export function normalizePlacementResult(raw: unknown): PlacementResult {
     source.cefr_hint === "B2" ||
     source.cefr_hint === "C1"
       ? source.cefr_hint
-      : "A1";
+      : "B1";
   const mode = source.recommended_mode === "Speak" ? "Speak" : "Text";
 
   return {

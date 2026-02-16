@@ -58,7 +58,7 @@ function toLevel(value: unknown): LearnerLevel {
   if (typeof value === "string" && LEVELS.includes(value as LearnerLevel)) {
     return value as LearnerLevel;
   }
-  return "Beginner";
+  return "Intermediate";
 }
 
 function toScenario(value: unknown): string {
