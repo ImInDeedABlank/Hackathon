@@ -376,6 +376,13 @@ export async function POST(request: Request) {
     if (!modelResult.ok) {
       lastDebug = modelResult.debug;
       lastError = `Gemini failed (${modelResult.reason}) on attempt ${attempt + 1}.`;
+      if (
+        modelResult.reason === "missing_key" ||
+        modelResult.reason === "network_error" ||
+        modelResult.reason === "http_error"
+      ) {
+        break;
+      }
       continue;
     }
 

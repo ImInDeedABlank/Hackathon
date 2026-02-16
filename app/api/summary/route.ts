@@ -296,6 +296,13 @@ export async function POST(request: Request) {
     });
 
     if (!modelResult.ok) {
+      if (
+        modelResult.reason === "missing_key" ||
+        modelResult.reason === "network_error" ||
+        modelResult.reason === "http_error"
+      ) {
+        break;
+      }
       continue;
     }
 

@@ -81,11 +81,49 @@ function sleep(ms: number): Promise<void> {
 }
 
 function computeBackoff(attempt: number): number {
-  const base = 500;
-  const cap = 15000;
+  const base = 1000;
+  const cap = 30000;
   const exp = Math.min(cap, base * 2 ** attempt);
-  const jitter = Math.floor(Math.random() * 250);
+  const jitter = Math.floor(Math.random() * 500);
   return exp + jitter;
+}
+
+function parseNonNegativeInt(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function max429Retries(): number {
+  return parseNonNegativeInt(process.env.GEMINI_429_RETRIES) ?? 2;
+}
+
+function minRequestIntervalMs(): number {
+  return parseNonNegativeInt(process.env.GEMINI_MIN_INTERVAL_MS) ?? 250;
+}
+
+let nextGeminiRequestAt = 0;
+
+async function waitForGeminiSlot(): Promise<void> {
+  const minInterval = minRequestIntervalMs();
+  if (minInterval <= 0) {
+    return;
+  }
+
+  const now = Date.now();
+  const slot = Math.max(now, nextGeminiRequestAt);
+  nextGeminiRequestAt = slot + minInterval;
+  const waitMs = slot - now;
+  if (waitMs > 0) {
+    await sleep(waitMs);
+  }
 }
 
 function parseRetryAfterDelayMs(value: string | null): number | null {
@@ -198,11 +236,12 @@ async function callGeminiTextOnce(
 
   const url = `${endpointForModel(model)}?key=${encodeURIComponent(apiKey)}`;
 
-  const maxRetries = retryOn429 ? 2 : 0;
+  const maxRetries = retryOn429 ? max429Retries() : 0;
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     let response: Response;
     try {
+      await waitForGeminiSlot();
       response = await fetch(url, {
         method: "POST",
         headers: {
@@ -245,7 +284,10 @@ async function callGeminiTextOnce(
 
       if (response.status === 429 && attempt < maxRetries) {
         const retryAfterMs = parseRetryAfterDelayMs(response.headers.get("retry-after"));
-        const delayMs = retryAfterMs ?? computeBackoff(attempt);
+        const delayMs = Math.min(45000, retryAfterMs ?? computeBackoff(attempt));
+        console.warn(
+          `[${options.routeTag}] Gemini retrying after 429 attempt=${attempt + 1}/${maxRetries + 1} delayMs=${delayMs} model=${model}`,
+        );
         await sleep(delayMs);
         continue;
       }
@@ -422,7 +464,7 @@ export async function callGeminiText(
   let lastFailure: GeminiFailure | null = null;
 
   for (const model of models) {
-    const result = await callGeminiTextOnce(options, model);
+    const result = await callGeminiTextOnce(options, model, true);
     if (result.ok) {
       return result;
     }
