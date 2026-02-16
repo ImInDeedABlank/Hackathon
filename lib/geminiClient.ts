@@ -198,7 +198,7 @@ async function callGeminiTextOnce(
 
   const url = `${endpointForModel(model)}?key=${encodeURIComponent(apiKey)}`;
 
-  const maxRetries = retryOn429 ? 5 : 0;
+  const maxRetries = retryOn429 ? 2 : 0;
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     let response: Response;
